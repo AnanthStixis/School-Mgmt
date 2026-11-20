@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GUARDIAN_RELATIONS, STUDENT_STATUSES, type GuardianInput, type StudentDto, type StudentInput, type StudentStatus } from '@sms/shared';
+import { canAccess, GUARDIAN_RELATIONS, STUDENT_STATUSES, type GuardianInput, type StudentDto, type StudentInput, type StudentStatus } from '@sms/shared';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
+import { StudentAttendance } from './Attendance';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, PageHeader, Pager, Select, Table, statusTone } from '../components/ui';
 
 const PAGE_SIZE = 25;
@@ -93,6 +95,8 @@ export function Students() {
 export function StudentDetail() {
   const { id = '' } = useParams();
   const { isManager } = useScope();
+  const { user } = useAuth();
+  const showAttendance = !!user && canAccess('attendance', user.role);
   const q = useQuery({ queryKey: ['student', id], queryFn: () => api.student(id) });
   const [editing, setEditing] = useState(false);
   if (q.isLoading) return <Loading />;
@@ -161,7 +165,12 @@ export function StudentDetail() {
           )}
         </Card>
       </div>
-      <p className="mt-4 text-sm text-muted">Attendance, marks and fees for this student appear here as those modules are built.</p>
+      {showAttendance && <div className="mt-4">
+        <Card title="Attendance (last two months)" actions={<Link to="/attendance" className="text-sm">Attendance →</Link>}>
+          <StudentAttendance studentId={s.id} compact />
+        </Card>
+      </div>}
+      <p className="mt-4 text-sm text-muted">Marks and fees for this student appear here as those modules are built.</p>
       {editing && <StudentForm student={s} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />}
     </div>
   );

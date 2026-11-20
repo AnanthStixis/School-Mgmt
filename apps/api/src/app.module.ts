@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AcademicYearsController } from './academic-years/academic-years.controller';
+import { AdmissionsController } from './admissions/admissions.controller';
+import { AdmissionsService } from './admissions/admissions.service';
+import { AttendanceController } from './attendance/attendance.controller';
+import { AttendanceService } from './attendance/attendance.service';
 import { AuditModule } from './audit/audit.service';
 import { AuthModule } from './auth/auth.module';
 import { BranchesController } from './branches/branches.controller';
@@ -26,7 +30,9 @@ import { StudentsService } from './students/students.service';
     StaffController,
     StudentsController,
     ImportsController,
+    AdmissionsController,
+    AttendanceController,
   ],
-  providers: [StaffService, StudentsService],
+  providers: [StaffService, StudentsService, AdmissionsService, AttendanceService],
 })
 export class AppModule {}

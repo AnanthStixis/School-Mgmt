@@ -141,7 +141,9 @@ async function main() {
     }
 
     for (const [c, [grade, section, name]] of CLASSES[b.code].entries()) {
-      const classTeacherId = b.code === 'BNMPS' && name === '8-A' ? `seed-staff-BNMPS-T03` : teacherIds[(c * 3) % teacherIds.length];
+      // Priya Sharma (T03) is class teacher of 8-A only, matching her persona.
+      let classTeacherId = b.code === 'BNMPS' && name === '8-A' ? `seed-staff-BNMPS-T03` : teacherIds[(c * 3) % teacherIds.length];
+      if (classTeacherId === 'seed-staff-BNMPS-T03' && name !== '8-A') classTeacherId = teacherIds[(c * 3 + 1) % teacherIds.length];
       const cls = await prisma.schoolClass.upsert({
         where: { branchId_academicYearId_name: { branchId, academicYearId: year.id, name } },
         update: { grade, section, classTeacherId, room: `R${101 + c}` },
@@ -197,7 +199,73 @@ async function main() {
       }
     }
   }
-  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students`);
+  // ---------- admissions: next year's intake is open ----------
+  const nextYear = await prisma.academicYear.upsert({
+    where: { tenantId_label: { tenantId: tenant.id, label: '2027-28' } },
+    update: {},
+    create: { tenantId: tenant.id, label: '2027-28', startsOn: new Date('2027-04-01'), endsOn: new Date('2028-03-31') },
+  });
+  const kids = ['Ritvik', 'Samaira', 'Advik', 'Myra', 'Reyansh', 'Anvi', 'Kian', 'Zara', 'Neil', 'Tara', 'Ayaan', 'Navya', 'Rudra', 'Sara'];
+  const stages = ['Enquiry', 'Enquiry', 'Enquiry', 'Applied', 'Applied', 'Applied', 'Test/Interview', 'Test/Interview', 'Test/Interview', 'Admitted', 'Admitted', 'Enquiry', 'Applied', 'Dropped'];
+  const sources = ['Website', 'Walk-in', 'Referral', 'Facebook Ad', 'Google Ad'];
+  for (const [i, kid] of kids.entries()) {
+    const b = branches[i % 3];
+    const last = pick(LN);
+    const grade = b.code === 'BNMPRE' ? pick([-2, -1, 0]) : b.code === 'BNMPUC' ? 11 : pick([1, 5, 6, 8, 9]);
+    const id = `seed-enq-${pad(i + 1)}`;
+    const created = new Date(Date.now() - ri(2, 30) * 86_400_000);
+    const data = {
+      tenantId: tenant.id,
+      branchId: bid[b.code],
+      academicYearId: i < 12 ? nextYear.id : year.id,
+      childName: `${kid} ${last}`,
+      gender: i % 2 ? 'F' : 'M',
+      grade,
+      parentName: `${pick(FM)} ${last}`,
+      parentPhone: `+9193${pad(i + 1, 8)}`,
+      city: 'Bangalore',
+      previousSchool: grade > 0 ? pick(['Delhi Public School', 'Kendriya Vidyalaya', 'National Public School', 'Sri Kumaran']) : null,
+      previousBoard: grade > 0 ? pick(['CBSE', 'State', 'ICSE']) : null,
+      siblingInSchool: i === 4,
+      source: pick(sources),
+      stage: stages[i],
+      dropReason: stages[i] === 'Dropped' ? 'Chose a school closer to home' : null,
+      nextFollowUp: ['Enquiry', 'Applied'].includes(stages[i]) ? new Date(Date.now() + (ri(-2, 5) * 86_400_000)) : null,
+      createdAt: created,
+    };
+    await prisma.enquiry.upsert({ where: { id }, update: data, create: { id, ...data } });
+    await prisma.enquiryActivity.deleteMany({ where: { enquiryId: id } });
+    await prisma.enquiryActivity.create({ data: { enquiryId: id, kind: 'created', text: `Enquiry recorded (source: ${data.source})`, byName: 'Front Office', at: created } });
+    if (stages[i] !== 'Enquiry') await prisma.enquiryActivity.create({ data: { enquiryId: id, kind: 'stage', text: `Enquiry → ${stages[i] === 'Dropped' ? 'Dropped: ' + data.dropReason : stages[i]}`, byName: 'Anitha Krishnan', at: new Date(created.getTime() + 86_400_000) } });
+  }
+
+  // ---------- attendance: about 8 weeks of history up to yesterday (today is left to mark) ----------
+  const ist = (ms: number) => new Date(ms + 5.5 * 3600_000).toISOString().slice(0, 10);
+  const days: string[] = [];
+  for (let k = 1; days.length < 45 && k < 90; k++) {
+    const d = ist(Date.now() - k * 86_400_000);
+    if (new Date(`${d}T00:00:00Z`).getUTCDay() !== 0 && d >= '2026-04-01') days.push(d); // Mon–Sat
+  }
+  const allClasses = await prisma.schoolClass.findMany({ where: { academicYearId: year.id }, include: { students: { where: { status: { in: ['Active', 'Temporary'] } }, select: { id: true } }, classTeacher: true } });
+  // Each student gets a steady "attendance habit" so some fall below the 75% threshold.
+  const habit = (id: string) => {
+    let h = 0;
+    for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return 0.68 + ((h % 1000) / 1000) * 0.31;
+  };
+  let recs = 0;
+  for (const c of allClasses) {
+    const records: { studentId: string; classId: string; date: Date; status: string }[] = [];
+    for (const d of days) for (const st of c.students) {
+      const r = rnd();
+      const p = habit(st.id);
+      records.push({ studentId: st.id, classId: c.id, date: new Date(`${d}T00:00:00Z`), status: r < p ? 'P' : r < p + (1 - p) * 0.3 ? 'L' : 'A' });
+    }
+    recs += (await prisma.attendanceRecord.createMany({ data: records, skipDuplicates: true })).count;
+    await prisma.attendanceRegister.createMany({ data: days.map((d) => ({ classId: c.id, date: new Date(`${d}T00:00:00Z`), submittedBy: c.classTeacher?.name ?? 'Class teacher', submittedAt: new Date(`${d}T03:30:00Z`) })), skipDuplicates: true });
+  }
+
+  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days`);
 }
 
 main()

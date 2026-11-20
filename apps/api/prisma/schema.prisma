@@ -55,12 +55,13 @@ model Branch {
   modules   Json?
   createdAt DateTime @default(now())
 
-  tenant   Tenant        @relation(fields: [tenantId], references: [id])
-  users    User[]
-  classes  SchoolClass[]
-  students Student[]
-  staff    Staff[]
-  subjects Subject[]
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  users     User[]
+  classes   SchoolClass[]
+  students  Student[]
+  staff     Staff[]
+  subjects  Subject[]
+  enquiries Enquiry[]
 
   @@unique([tenantId, code])
 }
@@ -130,8 +131,9 @@ model AcademicYear {
   /// archived years are read-only
   locked   Boolean  @default(false)
 
-  tenant  Tenant        @relation(fields: [tenantId], references: [id])
-  classes SchoolClass[]
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  classes   SchoolClass[]
+  enquiries Enquiry[]
 
   @@unique([tenantId, label])
 }
@@ -149,10 +151,12 @@ model SchoolClass {
   classTeacherId String?
   createdAt      DateTime @default(now())
 
-  branch       Branch       @relation(fields: [branchId], references: [id])
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  classTeacher Staff?       @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+  branch       Branch               @relation(fields: [branchId], references: [id])
+  academicYear AcademicYear         @relation(fields: [academicYearId], references: [id])
+  classTeacher Staff?               @relation("ClassTeacher", fields: [classTeacherId], references: [id])
   students     Student[]
+  attendance   AttendanceRecord[]
+  registers    AttendanceRegister[]
 
   @@unique([branchId, academicYearId, name])
 }
@@ -197,10 +201,12 @@ model Student {
   status      String    @default("Active")
   createdAt   DateTime  @default(now())
 
-  branch    Branch            @relation(fields: [branchId], references: [id])
-  class     SchoolClass?      @relation(fields: [classId], references: [id])
-  user      User?             @relation("StudentLogin", fields: [userId], references: [id])
-  guardians StudentGuardian[]
+  branch     Branch             @relation(fields: [branchId], references: [id])
+  class      SchoolClass?       @relation(fields: [classId], references: [id])
+  user       User?              @relation("StudentLogin", fields: [userId], references: [id])
+  guardians  StudentGuardian[]
+  attendance AttendanceRecord[]
+  enquiry    Enquiry?
 
   @@unique([branchId, admissionNo])
 }
@@ -252,4 +258,112 @@ model Subject {
   branch Branch @relation(fields: [branchId], references: [id])
 
   @@unique([branchId, code])
+}
+
+/// Admissions CRM: one prospective student, from first enquiry to enrolment.
+model Enquiry {
+  id              String    @id @default(cuid())
+  tenantId        String
+  branchId        String
+  /// The year the child is applying for (often next year)
+  academicYearId  String
+  childName       String
+  gender          String?
+  dob             DateTime? @db.Date
+  /// Grade applied for: -2 Nursery … 12
+  grade           Int
+  parentName      String
+  parentPhone     String
+  altPhone        String?
+  parentEmail     String?
+  city            String?
+  address         String?
+  previousSchool  String?
+  previousBoard   String?
+  siblingInSchool Boolean   @default(false)
+  /// Website, Walk-in, Referral, Facebook Ad, Google Ad, Other
+  source          String    @default("Walk-in")
+  /// Enquiry, Applied, Test/Interview, Admitted, Enrolled, Dropped
+  stage           String    @default("Enquiry")
+  dropReason      String?
+  nextFollowUp    DateTime? @db.Date
+  /// Set when the child is enrolled
+  studentId       String?   @unique
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  branch       Branch            @relation(fields: [branchId], references: [id])
+  academicYear AcademicYear      @relation(fields: [academicYearId], references: [id])
+  student      Student?          @relation(fields: [studentId], references: [id])
+  activity     EnquiryActivity[]
+
+  @@index([branchId, stage])
+  @@index([parentPhone])
+}
+
+/// Timeline of an enquiry: stage changes and staff notes.
+model EnquiryActivity {
+  id        String   @id @default(cuid())
+  enquiryId String
+  /// stage | note | created | enrolled
+  kind      String
+  text      String
+  byId      String?
+  byName    String?
+  at        DateTime @default(now())
+
+  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId, at])
+}
+
+/// One student's mark for one school day. P = present, A = absent, L = leave.
+model AttendanceRecord {
+  id         String   @id @default(cuid())
+  studentId  String
+  classId    String
+  date       DateTime @db.Date
+  status     String
+  markedById String?
+  markedAt   DateTime @default(now())
+
+  student Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, date])
+  @@index([classId, date])
+}
+
+/// A class's register for a day has been submitted (and by whom).
+model AttendanceRegister {
+  id            String   @id @default(cuid())
+  classId       String
+  date          DateTime @db.Date
+  submittedById String?
+  submittedBy   String?
+  submittedAt   DateTime @default(now())
+
+  class SchoolClass @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  @@unique([classId, date])
+}
+
+/// Outgoing messages (SMS now; WhatsApp/app push later). dedupeKey stops repeats,
+/// e.g. one absence alert per guardian per student per day.
+model Notification {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  channel   String    @default("sms")
+  template  String
+  text      String
+  /// queued, sent, failed
+  status    String    @default("queued")
+  error     String?
+  dedupeKey String    @unique
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@index([tenantId, createdAt])
 }

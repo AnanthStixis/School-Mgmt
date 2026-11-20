@@ -90,7 +90,9 @@ What to look for:
 - **Branches & Config**: the School Admin can add and edit branches; a branch manager can only view their own.
 - **Academic Setup**: add classes by grade range and sections, set class teachers and rooms, manage subjects.
 - **Staff**: add staff and give them a login (teacher, accounts; manager only by the School Admin).
-- **Students**: search by name, admission number or parent mobile; open a profile to see guardians and siblings; add or edit students; import a CSV from **Import CSV**.
+- **Students**: search by name, admission number or parent mobile; open a profile to see guardians, siblings and attendance; add or edit students; import a CSV from **Import CSV**.
+- **Admissions** (managers): the enquiry board; open an enquiry to add notes and follow-ups, move it to Admitted, then **Enrol student**.
+- **Attendance**: sign in as the teacher (`98000 00011`) and mark 8-A for today. Absent students' parents get an SMS, shown in the API log as `[SMS (dev)]`. Managers also see an **Overview** tab; the parent (`98000 00001`) sees each child's calendar.
 - Each role's sidebar matches the POC. Opening a module the role can't use shows **Access restricted**.
 - Reloading the page keeps you signed in, and **Sign out** returns you to the sign-in page.
 
@@ -144,4 +146,7 @@ Get-NetTCPConnection -LocalPort 3000,5174 -State Listen | ForEach-Object { Stop-
 - **Staff (sprint 2)**: directory and login access. Staff logins sign in with a mobile code. Branch managers can give teacher/accounts access; only the School Admin can give manager access. Deactivating staff or changing their role ends their sessions immediately.
 - **Students & guardians (sprint 2)**: student records with status (Active, Temporary, Left, Alumni), generated admission numbers (`BNMPS26-0001`), up to 3 guardians. A guardian is identified by mobile number, so students sharing a parent number are linked as siblings under one parent login.
 - **CSV import (sprint 2)**: students and staff. Every row is checked first and problems are listed by line; nothing is saved unless the whole file is valid, and then it is saved in one transaction.
+- **Admissions (sprint 3)**: enquiries for this or next year move Enquiry → Applied → Test/Interview → Admitted, or are dropped with a reason (and can be re-opened). Each has a timeline of stage changes and notes, follow-up dates, and a duplicate warning (same parent mobile and child name). Enrolling creates the student in one transaction, linking siblings by parent mobile. Fee invoices on enrolment come with the fees module.
+- **Attendance (sprint 3)**: daily register per class (Present / Absent / Leave). Class teachers mark their own class today or up to 2 days back; managers any class and date in the open year. Future dates, non-working days and locked years are refused. On today's register, each absent student's primary guardian gets one SMS (never repeated for the same day). Managers get class-wise trends and an at-risk list using each branch's attendance threshold; parents and students see a calendar.
+- **Notifications**: every outgoing SMS is recorded (queued / sent / failed) so a real provider can be plugged in later.
 - The web app has a real sign-in page, a role-based sidebar (a slide-in menu on phones), a branch switcher for the School Admin, and an "Access restricted" screen for modules a role can't open. Modules not built yet show a placeholder.

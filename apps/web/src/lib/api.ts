@@ -1,5 +1,17 @@
 import type {
   AcademicYearDto,
+  AdmissionStats,
+  AttendanceOverview,
+  EnquiryDetailDto,
+  EnquiryDto,
+  EnquiryInput,
+  EnrolInput,
+  MarkableClass,
+  PipelineStage,
+  RegisterDto,
+  RegisterSaveInput,
+  RegisterSaveResult,
+  StudentAttendanceDto,
   ApiError,
   AuthResponse,
   BranchDetailDto,
@@ -134,6 +146,24 @@ export const api = {
 
   importTemplate: (kind: 'students' | 'staff') => call<string>('GET', `/imports/${kind}/template`, undefined, true),
   importCsv: (kind: 'students' | 'staff', branchId: string, csv: string, dryRun: boolean) => call<ImportResult>('POST', `/imports/${kind}`, { branchId, csv, dryRun }),
+
+  enquiries: (p: { branchId?: string; academicYearId?: string; q?: string; includeClosed?: boolean }) =>
+    call<EnquiryDto[]>('GET', `/enquiries${qs({ ...p, includeClosed: p.includeClosed ? 'true' : undefined })}`),
+  enquiryStats: (p: { branchId?: string; academicYearId?: string }) => call<AdmissionStats>('GET', `/enquiries/stats${qs(p)}`),
+  enquiry: (id: string) => call<EnquiryDetailDto>('GET', `/enquiries/${id}`),
+  createEnquiry: (b: EnquiryInput) => call<EnquiryDetailDto>('POST', '/enquiries', b),
+  updateEnquiry: (id: string, b: Partial<EnquiryInput>) => call<EnquiryDetailDto>('PATCH', `/enquiries/${id}`, b),
+  moveEnquiry: (id: string, stage: PipelineStage) => call<EnquiryDetailDto>('POST', `/enquiries/${id}/move`, { stage }),
+  dropEnquiry: (id: string, reason: string) => call<EnquiryDetailDto>('POST', `/enquiries/${id}/drop`, { reason }),
+  noteEnquiry: (id: string, text: string, nextFollowUp?: string | null) => call<EnquiryDetailDto>('POST', `/enquiries/${id}/notes`, { text, nextFollowUp }),
+  enrolEnquiry: (id: string, b: EnrolInput) => call<EnquiryDetailDto>('POST', `/enquiries/${id}/enrol`, b),
+
+  attendanceClasses: () => call<MarkableClass[]>('GET', '/attendance/classes'),
+  register: (classId: string, date?: string) => call<RegisterDto>('GET', `/attendance/register${qs({ classId, date })}`),
+  saveRegister: (b: RegisterSaveInput) => call<RegisterSaveResult>('PUT', '/attendance/register', b),
+  attendanceOverview: (branchId?: string) => call<AttendanceOverview>('GET', `/attendance/overview${qs({ branchId })}`),
+  myStudents: () => call<{ id: string; name: string; className: string | null }[]>('GET', '/attendance/mine'),
+  studentAttendance: (id: string) => call<StudentAttendanceDto>('GET', `/attendance/students/${id}`),
 
   login: (email: string, password: string) => raw<AuthResponse>('POST', '/auth/login', { email, password }, false),
   requestOtp: (phone: string) => raw<{ message: string }>('POST', '/auth/otp/request', { phone }, false),

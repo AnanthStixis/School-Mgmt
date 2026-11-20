@@ -38,6 +38,6 @@ import { ConsoleSmsSender, SMS_SENDER } from './sms';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: AccessGuard },
   ],
-  exports: [AuthService],
+  exports: [AuthService, SMS_SENDER],
 })
 export class AuthModule {}

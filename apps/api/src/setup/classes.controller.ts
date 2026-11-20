@@ -141,6 +141,8 @@ export class ClassesController {
     const year = await this.scope.year(user, c.academicYearId);
     this.scope.assertYearOpen(year);
     if (c._count.students > 0) throw new ConflictException(`${c.name} has ${c._count.students} students. Move them to another class first.`);
+    // Attendance history must survive, so a class that has registers is kept.
+    if (await this.prisma.attendanceRegister.count({ where: { classId: id } })) throw new ConflictException(`${c.name} has attendance history and cannot be deleted`);
     await this.prisma.schoolClass.delete({ where: { id } });
     await this.audit.record({ tenantId: year.tenantId, actorId: user.id, action: 'class.delete', entity: 'SchoolClass', entityId: id, data: { name: c.name } });
   }

@@ -15,6 +15,8 @@ import { Setup } from './pages/Setup';
 import { Staff } from './pages/Staff';
 import { StudentDetail, Students } from './pages/Students';
 import { Import } from './pages/Import';
+import { Admissions } from './pages/Admissions';
+import { Attendance } from './pages/Attendance';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 
@@ -53,6 +55,8 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/staff" element={<Guard module="staff"><Staff /></Guard>} />
               <Route path="/students" element={<Guard module="students"><Students /></Guard>} />
               <Route path="/students/:id" element={<Guard module="students"><StudentDetail /></Guard>} />
+              <Route path="/admissions" element={<Guard module="admissions"><Admissions /></Guard>} />
+              <Route path="/attendance" element={<Guard module="attendance"><Attendance /></Guard>} />
               <Route path="/import/:kind" element={<Guard module="students"><Import /></Guard>} />
               <Route path="/:module" element={<ModulePlaceholder />} />
             </Route>
