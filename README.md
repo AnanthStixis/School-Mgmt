@@ -116,9 +116,18 @@ Scan the QR code with the Expo Go app on your phone. The mobile app doesn't sign
 |---|---|
 | `password authentication failed for user "sms"` | Re-run the `psql` command in step 1. It resets the `sms` password to the development value. |
 | `JWT_SECRET must be at least 32 characters` | Fill in `JWT_SECRET` in `apps/api/.env` (step 1). |
-| Port 3000 or 5174 already in use | Stop the other process, or the earlier `corepack pnpm dev` window. |
+| `Port 5174 is already in use` (or 3000) | Another copy of the app is still running. Close that window (`Ctrl+C`), or stop whatever holds the port with the commands below, then run `corepack pnpm dev` again. |
 | `Please wait 30 seconds before asking for another code` | Wait 30 seconds; codes can only be re-sent after that. |
 | Database schema changed after a `git pull` | Run `corepack pnpm db:migrate` again. |
+
+To see what is using ports 3000 and 5174:
+```powershell
+Get-NetTCPConnection -LocalPort 3000,5174 -State Listen | Select-Object LocalPort, OwningProcess, @{n='Name';e={(Get-Process -Id $_.OwningProcess).ProcessName}}
+```
+If it's a leftover `node` process from this project, stop it:
+```powershell
+Get-NetTCPConnection -LocalPort 3000,5174 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess }
+```
 
 ## What's here so far
 - RBAC rules ported 1:1 from the POC (`packages/shared/src/modules.ts`), used by both web and mobile.
