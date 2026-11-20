@@ -46,7 +46,13 @@ model Branch {
   address   String?
   phone     String?
   email     String?
+  city      String?
   since     Int?
+  active    Boolean  @default(true)
+  /// Working days, school timings, terms per year, attendance threshold… (see BranchSettings in @sms/shared)
+  settings  Json?
+  /// Modules switched on for this branch, e.g. { "library": false }. Missing keys mean on.
+  modules   Json?
   createdAt DateTime @default(now())
 
   tenant   Tenant        @relation(fields: [tenantId], references: [id])
@@ -54,26 +60,28 @@ model Branch {
   classes  SchoolClass[]
   students Student[]
   staff    Staff[]
+  subjects Subject[]
 
   @@unique([tenantId, code])
 }
 
 /// A login. tenantId is null only for the Stixis platform admin; branchId null = all branches.
 model User {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String?
   branchId     String?
   role         Role
   name         String
-  title        String   @default("")
-  email        String   @unique
-  /// E.164 (+91…). Used for OTP sign-in by parents and students.
-  phone        String?  @unique
+  title        String    @default("")
+  /// Optional: parents often have none. Needed for e-mail + password sign-in.
+  email        String?   @unique
+  /// E.164 (+91…). Used for OTP sign-in (parents, students, and staff without a password).
+  phone        String?   @unique
   /// Staff sign in with a password; parents/students may have none (OTP only).
   passwordHash String?
-  active       Boolean  @default(true)
+  active       Boolean   @default(true)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   tenant        Tenant?           @relation(fields: [tenantId], references: [id])
   branch        Branch?           @relation(fields: [branchId], references: [id])
@@ -129,7 +137,7 @@ model AcademicYear {
 }
 
 model SchoolClass {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   branchId       String
   academicYearId String
   /// -2 Nursery, -1 LKG, 0 UKG, 1-12
@@ -139,6 +147,7 @@ model SchoolClass {
   name           String
   room           String?
   classTeacherId String?
+  createdAt      DateTime @default(now())
 
   branch       Branch       @relation(fields: [branchId], references: [id])
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
@@ -149,17 +158,20 @@ model SchoolClass {
 }
 
 model Staff {
-  id       String    @id @default(cuid())
-  branchId String
-  userId   String?   @unique
-  name     String
+  id            String    @id @default(cuid())
+  branchId      String
+  userId        String?   @unique
+  name          String
   /// Teacher, Accounts Officer, Front Office…
-  role     String
-  subject  String?
-  email    String?
-  phone    String?
-  status   String    @default("Active")
-  joinedOn DateTime? @db.Date
+  role          String
+  subject       String?
+  email         String?
+  phone         String?
+  qualification String?
+  /// Active, Inactive
+  status        String    @default("Active")
+  joinedOn      DateTime? @db.Date
+  createdAt     DateTime  @default(now())
 
   branch       Branch        @relation(fields: [branchId], references: [id])
   user         User?         @relation(fields: [userId], references: [id])
@@ -173,8 +185,14 @@ model Student {
   userId      String?   @unique
   admissionNo String
   name        String
+  /// M, F, O
   gender      String?
   dob         DateTime? @db.Date
+  rollNo      Int?
+  bloodGroup  String?
+  house       String?
+  address     String?
+  admittedOn  DateTime? @db.Date
   /// Active, Alumni, Left, Temporary
   status      String    @default("Active")
   createdAt   DateTime  @default(now())
@@ -190,7 +208,10 @@ model Student {
 model StudentGuardian {
   studentId String
   userId    String
-  relation  String @default("Parent")
+  /// Father, Mother, Guardian
+  relation  String  @default("Parent")
+  /// Receives alerts and fee reminders first.
+  primary   Boolean @default(false)
 
   student Student @relation(fields: [studentId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
@@ -214,4 +235,21 @@ model AuditLog {
   tenant Tenant? @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, entity, entityId])
+}
+
+/// Subject master per branch (POC: Academic Setup → Subject master).
+model Subject {
+  id       String  @id @default(cuid())
+  branchId String
+  name     String
+  code     String
+  /// Core, Language, Elective, Co-scholastic
+  type     String  @default("Core")
+  active   Boolean @default(true)
+  /// Shown on the report card
+  onReport Boolean @default(true)
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, code])
 }

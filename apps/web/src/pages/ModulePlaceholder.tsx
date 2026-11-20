@@ -1,10 +1,11 @@
 import { Navigate, useParams } from 'react-router-dom';
-import { MODULES, canAccess } from '@sms/shared';
+import { MODULES, canAccess, type ModuleKey } from '@sms/shared';
 import { useAuth } from '../lib/auth';
 
-/** Stand-in for modules not built yet. Enforces the same RBAC as the POC. */
-export function ModulePlaceholder() {
-  const { module } = useParams();
+/** Stand-in for modules not built yet, and the lock screen for modules a role can't open. */
+export function ModulePlaceholder({ forced }: { forced?: ModuleKey }) {
+  const params = useParams();
+  const module = forced ?? params.module;
   const { user } = useAuth();
   const m = MODULES.find((x) => x.key === module);
   if (!m || !user) return <Navigate to="/dashboard" replace />;

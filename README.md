@@ -72,21 +72,25 @@ You should see `"status":"ok"` and `"db":"up"`.
 
 Then open http://localhost:5174 and sign in:
 
-| Who | How to sign in |
-|---|---|
-| Group Director (all branches) | Staff tab: `director@bnmpschool.in` + your `SEED_PASSWORD` |
-| Branch Manager | Staff tab: `anitha@bnmpschool.in` + your `SEED_PASSWORD` |
-| Teacher | Staff tab: `priya.sharma@bnmpschool.in` + your `SEED_PASSWORD` |
-| Accounts | Staff tab: `kavitha@bnmpschool.in` + your `SEED_PASSWORD` |
-| Platform Admin (Stixis) | Staff tab: `meera@stixis.io` + your `SEED_PASSWORD` |
-| Parent | Parent / Student tab: `98000 00001`, then the 6-digit code |
-| Student | Parent / Student tab: `98000 00002`, then the 6-digit code |
+| Who | Staff tab (e-mail + your `SEED_PASSWORD`) | Or Parent / Student tab (mobile + code) |
+|---|---|---|
+| School Admin / Group Director (all branches) | `director@bnmpschool.in` | `98000 00013` |
+| Branch Manager (BNM Public School) | `anitha@bnmpschool.in` | `98000 00010` |
+| Teacher | `priya.sharma@bnmpschool.in` | `98000 00011` |
+| Accounts | `kavitha@bnmpschool.in` | `98000 00012` |
+| Platform Admin (Stixis) | `meera@stixis.io` | — |
+| Parent of Aarav & Diya | — | `98000 00001` |
+| Student (Aarav) | — | `98000 00002` |
 
 No SMS provider is set up yet, so the 6-digit code is printed in the window running `corepack pnpm dev`, in a line starting `[SMS (dev)]`.
 
 What to look for:
 - The dashboard shows **API: ok** and **Database: up**.
-- The Group Director sees 3 branches; everyone else sees only their own.
+- The Group Director (School Admin) sees 3 branches and a branch switcher in the top bar; everyone else sees only their own branch.
+- **Branches & Config**: the School Admin can add and edit branches; a branch manager can only view their own.
+- **Academic Setup**: add classes by grade range and sections, set class teachers and rooms, manage subjects.
+- **Staff**: add staff and give them a login (teacher, accounts; manager only by the School Admin).
+- **Students**: search by name, admission number or parent mobile; open a profile to see guardians and siblings; add or edit students; import a CSV from **Import CSV**.
 - Each role's sidebar matches the POC. Opening a module the role can't use shows **Access restricted**.
 - Reloading the page keeps you signed in, and **Sign out** returns you to the sign-in page.
 
@@ -136,4 +140,8 @@ Get-NetTCPConnection -LocalPort 3000,5174 -State Listen | ForEach-Object { Stop-
 - **Access control**: every API route needs a signed-in user unless marked `@Public()`. `@Roles()` and `@RequireModule()` use the shared POC permission rules. Queries are scoped to the caller's school and branch through `apps/api/src/common/scope.ts`.
 - **Audit log** of sign-ins, failed sign-ins, sign-outs, token reuse and academic-year changes.
 - **Endpoints**: `/api/health`, `/api/auth/*`, `/api/branches`, `/api/academic-years`.
-- The web app has a real sign-in page, a role-based sidebar, a dashboard, and an "Access restricted" screen for modules a role can't open. Modules not built yet show a placeholder.
+- **Academic setup (sprint 2)**: branches with settings (working days, timings, attendance threshold) editable only by the School Admin; classes by grade range × sections per academic year (only empty classes can be deleted; locked years are read-only); subject master per branch.
+- **Staff (sprint 2)**: directory and login access. Staff logins sign in with a mobile code. Branch managers can give teacher/accounts access; only the School Admin can give manager access. Deactivating staff or changing their role ends their sessions immediately.
+- **Students & guardians (sprint 2)**: student records with status (Active, Temporary, Left, Alumni), generated admission numbers (`BNMPS26-0001`), up to 3 guardians. A guardian is identified by mobile number, so students sharing a parent number are linked as siblings under one parent login.
+- **CSV import (sprint 2)**: students and staff. Every row is checked first and problems are listed by line; nothing is saved unless the whole file is valid, and then it is saved in one transaction.
+- The web app has a real sign-in page, a role-based sidebar (a slide-in menu on phones), a branch switcher for the School Admin, and an "Access restricted" screen for modules a role can't open. Modules not built yet show a placeholder.

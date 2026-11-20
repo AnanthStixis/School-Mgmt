@@ -19,7 +19,7 @@ export interface BranchDto {
 export interface SessionUser {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   role: Role;
   title: string;
   /** null only for the Stixis platform admin */

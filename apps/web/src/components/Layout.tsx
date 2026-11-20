@@ -1,16 +1,26 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ROLE_LABEL, modulesFor } from '@sms/shared';
 import { useAuth } from '../lib/auth';
+import { BranchSwitcher } from './BranchPicker';
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const location = useLocation();
+  // On small screens the sidebar is a slide-in drawer opened from the menu button.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   if (!user) return null;
   const mods = modulesFor(user.role);
   let lastGroup = '';
 
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[252px_1fr]">
-      <aside className="sticky top-0 hidden h-screen flex-col overflow-auto bg-side text-side-ink md:flex">
+      {menuOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMenuOpen(false)} />}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-auto bg-side text-side-ink transition-transform md:sticky md:top-0 md:h-screen md:w-auto md:translate-x-0 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        aria-label="Main menu"
+      >
         <div className="p-4">
           <img
             src={user.role === 'admin' ? '/stixis-logo.png' : '/bnm-logo.png'}
@@ -24,14 +34,10 @@ export function Layout() {
             lastGroup = m.group;
             return (
               <div key={m.key}>
-                {header && (
-                  <div className="px-2.5 pt-3.5 pb-1 text-[10.5px] tracking-widest text-side-grp uppercase">{header}</div>
-                )}
+                {header && <div className="px-2.5 pt-3.5 pb-1 text-[10.5px] tracking-widest text-side-grp uppercase">{header}</div>}
                 <NavLink
                   to={`/${m.key}`}
-                  className={({ isActive }) =>
-                    `block rounded-[9px] px-2.5 py-2 font-medium ${isActive ? 'bg-brand text-white' : 'hover:bg-side2 hover:text-white'}`
-                  }
+                  className={({ isActive }) => `block rounded-[9px] px-2.5 py-2 font-medium ${isActive ? 'bg-brand text-white' : 'hover:bg-side2 hover:text-white'}`}
                 >
                   {m.label}
                 </NavLink>
@@ -44,13 +50,17 @@ export function Layout() {
 
       <div className="flex min-w-0 flex-col">
         <header className="sticky top-0 z-20 flex h-15 items-center gap-3 border-b border-line bg-white px-4 md:px-6">
+          <button onClick={() => setMenuOpen(true)} aria-label="Open menu" className="rounded-lg border border-line px-2.5 py-1.5 md:hidden">
+            ☰
+          </button>
           <div className="flex-1" />
-          <div className="text-right leading-tight">
+          <BranchSwitcher />
+          <div className="hidden text-right leading-tight sm:block">
             <b>{user.name}</b>
             <br />
             <small className="text-muted">{ROLE_LABEL[user.role]}</small>
           </div>
-          <button onClick={() => void logout()} className="rounded-lg border border-line px-3 py-1.5 hover:bg-bg">
+          <button onClick={() => void logout()} className="rounded-lg border border-line px-3 py-1.5 whitespace-nowrap hover:bg-bg">
             Sign out
           </button>
         </header>
