@@ -1,0 +1,183 @@
+// Foundation schema derived from the POC (Poc/assets/data.js).
+// Every tenant-owned row carries tenantId so isolation can be enforced (Postgres RLS can be added later).
+// Module tables (fees, attendance, marks, tickets…) are added per module in phase 1.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  manager
+  teacher
+  accounts
+  parent
+  student
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  trust     String?
+  plan      String   @default("Growth")
+  city      String?
+  createdAt DateTime @default(now())
+
+  branches      Branch[]
+  users         User[]
+  academicYears AcademicYear[]
+  auditLogs     AuditLog[]
+}
+
+/// An institution under the trust: School, Pre-School, PU College.
+model Branch {
+  id        String   @id @default(cuid())
+  tenantId  String
+  /// BNMPS – also used in receipt numbers
+  code      String
+  name      String
+  board     String
+  color     String   @default("#e8650a")
+  address   String?
+  phone     String?
+  email     String?
+  since     Int?
+  createdAt DateTime @default(now())
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  users    User[]
+  classes  SchoolClass[]
+  students Student[]
+  staff    Staff[]
+
+  @@unique([tenantId, code])
+}
+
+/// A login. tenantId is null only for the Stixis platform admin; branchId null = all branches.
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String?
+  branchId     String?
+  role         Role
+  name         String
+  title        String   @default("")
+  email        String   @unique
+  phone        String?
+  passwordHash String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  tenant   Tenant?           @relation(fields: [tenantId], references: [id])
+  branch   Branch?           @relation(fields: [branchId], references: [id])
+  staff    Staff?
+  student  Student?          @relation("StudentLogin")
+  children StudentGuardian[]
+}
+
+model AcademicYear {
+  id       String   @id @default(cuid())
+  tenantId String
+  /// "2026-27"
+  label    String
+  startsOn DateTime @db.Date
+  endsOn   DateTime @db.Date
+  current  Boolean  @default(false)
+  /// archived years are read-only
+  locked   Boolean  @default(false)
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  classes SchoolClass[]
+
+  @@unique([tenantId, label])
+}
+
+model SchoolClass {
+  id             String  @id @default(cuid())
+  branchId       String
+  academicYearId String
+  /// -2 Nursery, -1 LKG, 0 UKG, 1-12
+  grade          Int
+  section        String
+  /// "8-A", "PUC I Science"
+  name           String
+  room           String?
+  classTeacherId String?
+
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  classTeacher Staff?       @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+  students     Student[]
+
+  @@unique([branchId, academicYearId, name])
+}
+
+model Staff {
+  id       String    @id @default(cuid())
+  branchId String
+  userId   String?   @unique
+  name     String
+  /// Teacher, Accounts Officer, Front Office…
+  role     String
+  subject  String?
+  email    String?
+  phone    String?
+  status   String    @default("Active")
+  joinedOn DateTime? @db.Date
+
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  user         User?         @relation(fields: [userId], references: [id])
+  classTeacher SchoolClass[] @relation("ClassTeacher")
+}
+
+model Student {
+  id          String    @id @default(cuid())
+  branchId    String
+  classId     String?
+  userId      String?   @unique
+  admissionNo String
+  name        String
+  gender      String?
+  dob         DateTime? @db.Date
+  /// Active, Alumni, Left, Temporary
+  status      String    @default("Active")
+  createdAt   DateTime  @default(now())
+
+  branch    Branch            @relation(fields: [branchId], references: [id])
+  class     SchoolClass?      @relation(fields: [classId], references: [id])
+  user      User?             @relation("StudentLogin", fields: [userId], references: [id])
+  guardians StudentGuardian[]
+
+  @@unique([branchId, admissionNo])
+}
+
+model StudentGuardian {
+  studentId String
+  userId    String
+  relation  String @default("Parent")
+
+  student Student @relation(fields: [studentId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@id([studentId, userId])
+}
+
+/// Append-only audit trail (fee corrections, receipt cancellation, RBAC changes…).
+model AuditLog {
+  id       String   @id @default(cuid())
+  tenantId String
+  actorId  String?
+  action   String
+  entity   String
+  entityId String?
+  data     Json?
+  at       DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, entity, entityId])
+}

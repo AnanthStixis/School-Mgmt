@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.turbo/
+.expo/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+web-build/
+*.tsbuildinfo
+
+
+# Approved clickable POC – kept locally as the reference spec, not part of this repo
+Poc/

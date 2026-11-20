@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Design tokens carried over from the POC (Poc/assets/app.css). */
+@theme {
+  --color-brand: #e8650a;
+  --color-brand-d: #c2540a;
+  --color-bg: #f3f5fa;
+  --color-card: #ffffff;
+  --color-ink: #18223a;
+  --color-muted: #6a7691;
+  --color-line: #e4e8f1;
+  --color-side: #14284d;
+  --color-side2: #1f3a6b;
+  --color-side-ink: #c9d3ea;
+  --color-side-grp: #6c7ba3;
+  --radius-card: 12px;
+  --font-sans: Inter, "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  @apply bg-bg text-ink font-sans text-sm;
+}

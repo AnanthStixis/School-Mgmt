@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "BNM School",
+    "slug": "bnm-school",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/bnm-emblem.png",
+    "userInterfaceStyle": "light",
+    "ios": { "bundleIdentifier": "io.stixis.bnmschool", "supportsTablet": true },
+    "android": { "package": "io.stixis.bnmschool" }
+  }
+}

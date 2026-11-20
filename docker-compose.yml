@@ -1,0 +1,6 @@
+# PostgreSQL runs on the local install (Windows service), not in Docker.
+# Redis is only needed once background jobs (SLA escalation, reminders) are built.
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
