@@ -1,9 +1,9 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { ROLE_LABEL, modulesFor } from '@sms/shared';
-import { useSession } from '../lib/session';
+import { useAuth } from '../lib/auth';
 
 export function Layout() {
-  const { user, signOut } = useSession();
+  const { user, logout } = useAuth();
   if (!user) return null;
   const mods = modulesFor(user.role);
   let lastGroup = '';
@@ -50,7 +50,7 @@ export function Layout() {
             <br />
             <small className="text-muted">{ROLE_LABEL[user.role]}</small>
           </div>
-          <button onClick={signOut} className="rounded-lg border border-line px-3 py-1.5 hover:bg-bg">
+          <button onClick={() => void logout()} className="rounded-lg border border-line px-3 py-1.5 hover:bg-bg">
             Sign out
           </button>
         </header>

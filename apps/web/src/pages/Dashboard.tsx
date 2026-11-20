@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { useSession } from '../lib/session';
+import { useAuth } from '../lib/auth';
 
 export function Dashboard() {
-  const { user } = useSession();
+  const { user } = useAuth();
   const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: false });
   const branches = useQuery({ queryKey: ['branches'], queryFn: api.branches, retry: false });
 

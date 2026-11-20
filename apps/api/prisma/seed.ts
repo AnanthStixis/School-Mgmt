@@ -1,5 +1,7 @@
 /* Seeds the demo tenant, branches and personas from the POC. Safe to re-run. */
+import 'dotenv/config';
 import { PrismaClient, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -36,22 +38,31 @@ async function main() {
     create: { tenantId: tenant.id, label: '2026-27', startsOn: new Date('2026-04-01'), endsOn: new Date('2027-03-31'), current: true },
   });
 
-  const users: { role: Role; name: string; title: string; email: string; branch: string | null; platform?: boolean }[] = [
+  // Staff sign in with SEED_PASSWORD (local dev only). Parent and student sign in by OTP on test numbers;
+  // in development the code is printed in the API log instead of being sent by SMS.
+  const seedPassword = process.env.SEED_PASSWORD;
+  if (!seedPassword) console.warn('SEED_PASSWORD is not set: staff accounts will have no password');
+  const passwordHash = seedPassword ? await bcrypt.hash(seedPassword, 12) : null;
+
+  const users: { role: Role; name: string; title: string; email: string; branch: string | null; platform?: boolean; phone?: string }[] = [
     { role: 'admin', name: 'Meera Nair', title: 'Platform Super Admin', email: 'meera@stixis.io', branch: null, platform: true },
     { role: 'manager', name: 'Dr. Rajesh Kumar', title: 'Group Director (Trust)', email: 'director@bnmpschool.in', branch: null },
     { role: 'manager', name: 'Anitha Krishnan', title: 'Branch Manager – BNM Public School', email: 'anitha@bnmpschool.in', branch: 'BNMPS' },
     { role: 'teacher', name: 'Priya Sharma', title: 'Mathematics • Class Teacher 8-A', email: 'priya.sharma@bnmpschool.in', branch: 'BNMPS' },
     { role: 'accounts', name: 'Kavitha Raman', title: 'Accounts Officer – BNM Public School', email: 'kavitha@bnmpschool.in', branch: 'BNMPS' },
-    { role: 'parent', name: 'Suresh Menon', title: 'Parent of Aarav (8-A) & Diya (6-B)', email: 'suresh.menon@mail.com', branch: 'BNMPS' },
-    { role: 'student', name: 'Aarav Menon', title: 'Class 8-A • Roll 1', email: 'aarav.menon@students.bnmpschool.in', branch: 'BNMPS' },
+    { role: 'parent', name: 'Suresh Menon', title: 'Parent of Aarav (8-A) & Diya (6-B)', email: 'suresh.menon@mail.com', branch: 'BNMPS', phone: '+919800000001' },
+    { role: 'student', name: 'Aarav Menon', title: 'Class 8-A • Roll 1', email: 'aarav.menon@students.bnmpschool.in', branch: 'BNMPS', phone: '+919800000002' },
   ];
   for (const u of users) {
+    const isStaff = u.role !== 'parent' && u.role !== 'student';
     const data = {
       role: u.role,
       name: u.name,
       title: u.title,
       tenantId: u.platform ? null : tenant.id,
       branchId: u.branch ? ids[u.branch] : null,
+      phone: u.phone ?? null,
+      passwordHash: isStaff ? passwordHash : null,
     };
     await prisma.user.upsert({ where: { email: u.email }, update: data, create: { ...data, email: u.email } });
   }

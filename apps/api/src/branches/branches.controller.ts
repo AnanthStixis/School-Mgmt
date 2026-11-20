@@ -1,19 +1,18 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import type { BranchDto } from '@sms/shared';
+import type { AuthUser } from '../auth/auth-user';
+import { CurrentUser } from '../auth/decorators';
+import { branchWhere } from '../common/scope';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('branches')
 export class BranchesController {
   constructor(private readonly prisma: PrismaService) {}
 
-  // TODO(auth): scope to the caller's tenant and branch once authentication lands.
+  /** Branches the caller can see: all of their school's for tenant-wide users, otherwise their own. */
   @Get()
-  async list(): Promise<BranchDto[]> {
-    try {
-      const rows = await this.prisma.branch.findMany({ orderBy: { code: 'asc' } });
-      return rows.map(({ id, code, name, board, color }) => ({ id, code, name, board, color }));
-    } catch {
-      throw new ServiceUnavailableException('Database unavailable');
-    }
+  async list(@CurrentUser() user: AuthUser): Promise<BranchDto[]> {
+    const rows = await this.prisma.branch.findMany({ where: branchWhere(user), orderBy: { since: 'asc' } });
+    return rows.map(({ id, code, name, board, color }) => ({ id, code, name, board, color }));
   }
 }

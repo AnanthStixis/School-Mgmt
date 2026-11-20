@@ -7,5 +7,8 @@
 SELECT 'CREATE ROLE sms LOGIN CREATEDB PASSWORD ''sms_dev_password'''
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sms')\gexec
 
+-- Re-running this script also re-applies the dev password, so it repairs a login that drifted.
+ALTER ROLE sms WITH LOGIN CREATEDB PASSWORD 'sms_dev_password';
+
 SELECT 'CREATE DATABASE sms OWNER sms'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'sms')\gexec

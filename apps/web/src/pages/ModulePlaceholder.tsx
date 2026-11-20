@@ -1,11 +1,11 @@
 import { Navigate, useParams } from 'react-router-dom';
 import { MODULES, canAccess } from '@sms/shared';
-import { useSession } from '../lib/session';
+import { useAuth } from '../lib/auth';
 
 /** Stand-in for modules not built yet. Enforces the same RBAC as the POC. */
 export function ModulePlaceholder() {
   const { module } = useParams();
-  const { user } = useSession();
+  const { user } = useAuth();
   const m = MODULES.find((x) => x.key === module);
   if (!m || !user) return <Navigate to="/dashboard" replace />;
 
