@@ -21,50 +21,104 @@ packages/shared Roles, module permissions (RBAC) and API types shared by all thr
 Poc/            Approved clickable POC (local reference only, git-ignored)
 ```
 
-## Getting started
-Prerequisites: Node 22+ and a local PostgreSQL server (16+; developed against 18, running as a Windows service on port 5432). pnpm comes through Corepack (`corepack enable`, or prefix commands with `corepack`).
+## Run and check locally
+Commands are for **Windows PowerShell**, run from the repository root.
 
-```bash
+### Prerequisites
+- Node.js 22 or later
+- PostgreSQL 16 or later running on `localhost:5432` (developed against the PostgreSQL 18 Windows service)
+- pnpm through Corepack. It's built into Node, so every command below starts with `corepack pnpm`.
+
+### 1. First-time setup (once per machine)
+Install dependencies:
+```powershell
 corepack pnpm install
 ```
-```bash
-cp apps/api/.env.example apps/api/.env
+Create the API settings file:
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
 ```
-Then fill in `JWT_SECRET` (any 32+ random characters; the file shows how to generate one) and `SEED_PASSWORD` (the password the seeded staff accounts get).
-
-One-time database setup. This creates the `sms` login and database, and asks for your `postgres` password:
-```bash
-"C:/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -f apps/api/prisma/create-db.sql
+Open `apps/api/.env` and fill in two values:
+- `JWT_SECRET`: paste the output of the command below.
+- `SEED_PASSWORD`: any password you choose. The seeded staff accounts get it.
+```powershell
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
-```bash
+Create the `sms` database login and database. This asks for your PostgreSQL `postgres` password:
+```powershell
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -U postgres -f apps/api/prisma/create-db.sql
+```
+Create the tables:
+```powershell
 corepack pnpm db:migrate
 ```
-```bash
+Load the demo school, branches and users:
+```powershell
 corepack pnpm db:seed
 ```
-```bash
+
+### 2. Start the app (every time)
+```powershell
 corepack pnpm dev
 ```
-Open http://localhost:5174 and sign in:
-- **Staff**: a seeded e-mail (e.g. `director@bnmpschool.in`) with your `SEED_PASSWORD`.
-- **Parent / Student**: test numbers `98000 00001` (parent) or `98000 00002` (student). No SMS provider is set up yet, so in development the 6-digit code appears in the API log.
+This starts the API on http://localhost:3000 and the web app on http://localhost:5174. Leave it running; stop it with `Ctrl+C`.
 
-If new database connections fail with "password authentication failed", re-run the one-time setup above: it resets the `sms` password to the development value.
-
-For the mobile app, run `corepack pnpm --filter @sms/mobile dev` and scan the QR code with Expo Go.
-
-## Checks
-```bash
-corepack pnpm build && corepack pnpm typecheck
+### 3. Check it works
+In a second PowerShell window, check the API and database:
+```powershell
+curl.exe http://localhost:3000/api/health
 ```
-```bash
+You should see `"status":"ok"` and `"db":"up"`.
+
+Then open http://localhost:5174 and sign in:
+
+| Who | How to sign in |
+|---|---|
+| Group Director (all branches) | Staff tab: `director@bnmpschool.in` + your `SEED_PASSWORD` |
+| Branch Manager | Staff tab: `anitha@bnmpschool.in` + your `SEED_PASSWORD` |
+| Teacher | Staff tab: `priya.sharma@bnmpschool.in` + your `SEED_PASSWORD` |
+| Accounts | Staff tab: `kavitha@bnmpschool.in` + your `SEED_PASSWORD` |
+| Platform Admin (Stixis) | Staff tab: `meera@stixis.io` + your `SEED_PASSWORD` |
+| Parent | Parent / Student tab: `98000 00001`, then the 6-digit code |
+| Student | Parent / Student tab: `98000 00002`, then the 6-digit code |
+
+No SMS provider is set up yet, so the 6-digit code is printed in the window running `corepack pnpm dev`, in a line starting `[SMS (dev)]`.
+
+What to look for:
+- The dashboard shows **API: ok** and **Database: up**.
+- The Group Director sees 3 branches; everyone else sees only their own.
+- Each role's sidebar matches the POC. Opening a module the role can't use shows **Access restricted**.
+- Reloading the page keeps you signed in, and **Sign out** returns you to the sign-in page.
+
+### 4. Run the automated checks
+Build and type-check everything:
+```powershell
+corepack pnpm build; corepack pnpm typecheck
+```
+API unit tests:
+```powershell
 corepack pnpm --filter @sms/api test
 ```
-End-to-end tests need the migrated, seeded database:
-```bash
+API end-to-end tests. These need the migrated, seeded database from step 1:
+```powershell
 corepack pnpm --filter @sms/api test:e2e
 ```
 CI (`.github/workflows/ci.yml`) runs all of these against a fresh PostgreSQL on every push and pull request.
+
+### Mobile app (optional)
+```powershell
+corepack pnpm --filter @sms/mobile dev
+```
+Scan the QR code with the Expo Go app on your phone. The mobile app doesn't sign in yet; it only previews each role's menu.
+
+### Troubleshooting
+| Problem | Fix |
+|---|---|
+| `password authentication failed for user "sms"` | Re-run the `psql` command in step 1. It resets the `sms` password to the development value. |
+| `JWT_SECRET must be at least 32 characters` | Fill in `JWT_SECRET` in `apps/api/.env` (step 1). |
+| Port 3000 or 5174 already in use | Stop the other process, or the earlier `corepack pnpm dev` window. |
+| `Please wait 30 seconds before asking for another code` | Wait 30 seconds; codes can only be re-sent after that. |
+| Database schema changed after a `git pull` | Run `corepack pnpm db:migrate` again. |
 
 ## What's here so far
 - RBAC rules ported 1:1 from the POC (`packages/shared/src/modules.ts`), used by both web and mobile.
