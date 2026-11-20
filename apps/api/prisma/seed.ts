@@ -265,7 +265,95 @@ async function main() {
     await prisma.attendanceRegister.createMany({ data: days.map((d) => ({ classId: c.id, date: new Date(`${d}T00:00:00Z`), submittedBy: c.classTeacher?.name ?? 'Class teacher', submittedAt: new Date(`${d}T03:30:00Z`) })), skipDuplicates: true });
   }
 
-  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days`);
+  // ---------- fees: PLACEHOLDER chart from the POC until the school sends its real fee chart ----------
+  const BANDS: Record<string, [string, number, number][]> = {
+    BNMPS: [['G1–G4', 1, 4], ['G5–G7', 5, 7], ['G8–G10', 8, 10], ['G11–G12', 11, 12]],
+    BNMPRE: [['Pre-primary', -2, 0]],
+    BNMPUC: [['PU', 11, 12]],
+  };
+  const ADM = ['Re-admission', 'New Admission', 'UKG to ICSE', 'State to ICSE'];
+  const SCHOOL_RATES: Record<string, Record<string, number[]>> = {
+    BNMPS: { 'G1–G4': [70000, 78000, 78000, 82000], 'G5–G7': [82000, 92000, 92000, 96000], 'G8–G10': [90000, 100000, 100000, 104000], 'G11–G12': [80000, 90000, 90000, 94000] },
+    BNMPRE: { 'Pre-primary': [48000, 56000] },
+    BNMPUC: { PU: [70000, 78000] },
+  };
+  const SLABS: [string, number][] = [['Within 1 km', 10000], ['1 to 2 km', 14000], ['2 to 3 km', 16000], ['3 to 4 km', 18000], ['4 to 6 km', 22000], ['Above 6 km', 26000]];
+  const due = (md: string[]) => md.map((d, k) => ({ seq: k + 1, dueDate: new Date(`${d}T00:00:00Z`) }));
+  let feeAssignments = 0;
+  for (const b of branches) {
+    const branchId = bid[b.code];
+    for (const [name, fromGrade, toGrade] of BANDS[b.code]) await prisma.feeBand.upsert({ where: { branchId_name: { branchId, name } }, update: { fromGrade, toGrade }, create: { branchId, name, fromGrade, toGrade } });
+    const types = [
+      { kind: 'SCHOOL', name: 'School Fees 26-27', comp: 'School Fee', plan: due(['2026-04-05', '2026-07-05', '2026-10-05', '2027-01-05']).map((x) => ({ ...x, label: `Installment ${x.seq}` })),
+        rates: Object.entries(SCHOOL_RATES[b.code]).flatMap(([band, amounts]) => amounts.map((a, i) => [`${band}|${ADM[i]}`, a] as [string, number])) },
+      { kind: 'APPLICATION', name: 'Application Fee 26-27', comp: 'Application Fee', plan: due(['2026-04-05']).map((x) => ({ ...x, label: 'Application Fee' })), rates: [['*', 1500]] as [string, number][] },
+      ...(b.code === 'BNMPRE' ? [] : [{ kind: 'TRANSPORT', name: 'Transportation Fees 26-27', comp: 'Transport Fee', plan: due(['2026-04-05', '2026-10-05']).map((x) => ({ ...x, label: `Transport Inst ${x.seq}` })),
+        rates: SLABS.flatMap(([slab, amt]) => [[`${slab}|Pickup & Drop`, amt], [`${slab}|Pickup`, Math.round((amt * 0.6) / 100) * 100], [`${slab}|Drop`, Math.round((amt * 0.6) / 100) * 100]] as [string, number][]) }]),
+    ];
+    for (const t of types) {
+      const ft = await prisma.feeType.upsert({
+        where: { branchId_academicYearId_name: { branchId, academicYearId: year.id, name: t.name } },
+        update: { kind: t.kind, components: [{ name: t.comp, percent: 100 }] },
+        create: { branchId, academicYearId: year.id, kind: t.kind, name: t.name, components: [{ name: t.comp, percent: 100 }] },
+      });
+      if (!(await prisma.feeAssignment.count({ where: { feeTypeId: ft.id } }))) {
+        await prisma.feeInstallmentPlan.deleteMany({ where: { feeTypeId: ft.id } });
+        await prisma.feeInstallmentPlan.createMany({ data: t.plan.map((p) => ({ feeTypeId: ft.id, ...p })) });
+      }
+      await prisma.feeRate.deleteMany({ where: { feeTypeId: ft.id } });
+      await prisma.feeRate.createMany({ data: t.rates.map(([key, amount]) => ({ feeTypeId: ft.id, key, amount })) });
+    }
+
+    // Fee profile + assignments. Most invoices are published; a few per branch are left for the accounts team to review.
+    const bands = await prisma.feeBand.findMany({ where: { branchId } });
+    const fts = await prisma.feeType.findMany({ where: { branchId, academicYearId: year.id }, include: { installments: { orderBy: { seq: 'asc' } }, rates: true } });
+    const students = await prisma.student.findMany({ where: { branchId, status: { in: ['Active', 'Temporary'] }, class: { academicYearId: year.id } }, include: { class: true } });
+    for (const [i, st] of students.entries()) {
+      const demo = ['Aarav Menon', 'Diya Menon'].includes(st.name);
+      const admissionType = demo ? 'Re-admission' : rnd() < 0.2 ? 'New Admission' : 'Re-admission';
+      const transport = b.code !== 'BNMPRE' && (demo ? st.name === 'Aarav Menon' : rnd() < 0.4);
+      const slab = transport ? (st.name === 'Aarav Menon' ? '2 to 3 km' : pick(SLABS)[0]) : null;
+      const pickupMode = transport ? (rnd() < 0.8 ? 'Pickup & Drop' : pick(['Pickup', 'Drop'])) : null;
+      await prisma.student.update({ where: { id: st.id }, data: { admissionType, transportSlab: slab, pickupMode, rte: !demo && rnd() < 0.02, staffKid: !demo && rnd() < 0.03 } });
+      const published = demo || i % 15 !== 7;
+      for (const ft of fts) {
+        if (await prisma.feeAssignment.findUnique({ where: { studentId_feeTypeId: { studentId: st.id, feeTypeId: ft.id } } })) continue;
+        let key: string | null = null;
+        let category = '';
+        if (ft.kind === 'SCHOOL') {
+          const band = bands.find((x) => st.class!.grade >= x.fromGrade && st.class!.grade <= x.toGrade);
+          key = band ? `${band.name}|${admissionType}` : null;
+          category = `${band?.name} · ${admissionType}`;
+        } else if (ft.kind === 'APPLICATION' && admissionType === 'New Admission') {
+          key = '*';
+          category = 'Application fee';
+        } else if (ft.kind === 'TRANSPORT' && slab) {
+          key = `${slab}|${pickupMode}`;
+          category = `${slab} · ${pickupMode}`;
+        }
+        const amount = key ? ft.rates.find((r) => r.key === key)?.amount : undefined;
+        if (!amount) continue;
+        const n = ft.installments.length;
+        const each = Math.round(amount / n);
+        await prisma.feeAssignment.create({
+          data: {
+            studentId: st.id,
+            feeTypeId: ft.id,
+            category,
+            gross: amount,
+            status: published ? 'PUBLISHED' : 'ASSIGNED',
+            onlineEnabled: published,
+            confirmedAt: published ? new Date('2026-03-20') : null,
+            publishedAt: published ? new Date('2026-03-25') : null,
+            invoices: { create: ft.installments.map((p, k) => ({ studentId: st.id, seq: p.seq, label: p.label, dueDate: p.dueDate, gross: k === n - 1 ? amount - each * (n - 1) : each })) },
+          },
+        });
+        feeAssignments++;
+      }
+    }
+  }
+
+  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days, ${feeAssignments} new fee assignments`);
 }
 
 main()

@@ -59,10 +59,13 @@ describe('Admissions and attendance (e2e)', () => {
 
   afterAll(async () => {
     const enq = await prisma.enquiry.findMany({ where: { childName: { startsWith: TAG } } });
-    const studentIds = enq.map((e) => e.studentId).filter((x): x is string => !!x);
+    // Also catch students left behind by an earlier interrupted run (matched by name).
+    const byName = await prisma.student.findMany({ where: { name: { startsWith: TAG } }, select: { id: true } });
+    const studentIds = [...new Set([...enq.map((e) => e.studentId).filter((x): x is string => !!x), ...byName.map((s) => s.id)])];
     await prisma.enquiry.deleteMany({ where: { id: { in: enq.map((e) => e.id) } } });
     await prisma.attendanceRecord.deleteMany({ where: { studentId: { in: studentIds } } });
     await prisma.studentGuardian.deleteMany({ where: { studentId: { in: studentIds } } });
+    await prisma.feeAssignment.deleteMany({ where: { studentId: { in: studentIds } } });
     await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
     await prisma.user.deleteMany({ where: { phone: { startsWith: `+9192${uniq.slice(0, 2)}` }, children: { none: {} } } });
     await app?.close();

@@ -47,6 +47,7 @@ describe('Academic setup, staff and students (e2e)', () => {
     // Remove everything this run created.
     const students = await prisma.student.findMany({ where: { name: { startsWith: TAG } }, select: { id: true } });
     await prisma.studentGuardian.deleteMany({ where: { studentId: { in: students.map((s) => s.id) } } });
+    await prisma.feeAssignment.deleteMany({ where: { studentId: { in: students.map((s) => s.id) } } });
     await prisma.student.deleteMany({ where: { id: { in: students.map((s) => s.id) } } });
     const staff = await prisma.staff.findMany({ where: { name: { startsWith: TAG } } });
     await prisma.staff.deleteMany({ where: { id: { in: staff.map((s) => s.id) } } });

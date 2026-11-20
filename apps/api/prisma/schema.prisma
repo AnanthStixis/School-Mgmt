@@ -62,6 +62,8 @@ model Branch {
   staff     Staff[]
   subjects  Subject[]
   enquiries Enquiry[]
+  feeTypes  FeeType[]
+  feeBands  FeeBand[]
 
   @@unique([tenantId, code])
 }
@@ -134,6 +136,7 @@ model AcademicYear {
   tenant    Tenant        @relation(fields: [tenantId], references: [id])
   classes   SchoolClass[]
   enquiries Enquiry[]
+  feeTypes  FeeType[]
 
   @@unique([tenantId, label])
 }
@@ -183,30 +186,42 @@ model Staff {
 }
 
 model Student {
-  id          String    @id @default(cuid())
-  branchId    String
-  classId     String?
-  userId      String?   @unique
-  admissionNo String
-  name        String
+  id            String    @id @default(cuid())
+  branchId      String
+  classId       String?
+  userId        String?   @unique
+  admissionNo   String
+  name          String
   /// M, F, O
-  gender      String?
-  dob         DateTime? @db.Date
-  rollNo      Int?
-  bloodGroup  String?
-  house       String?
-  address     String?
-  admittedOn  DateTime? @db.Date
+  gender        String?
+  dob           DateTime? @db.Date
+  rollNo        Int?
+  bloodGroup    String?
+  house         String?
+  address       String?
+  admittedOn    DateTime? @db.Date
   /// Active, Alumni, Left, Temporary
-  status      String    @default("Active")
-  createdAt   DateTime  @default(now())
+  status        String    @default("Active")
+  // ---- fee profile: decides which fee rate applies ----
+  /// Re-admission, New Admission, UKG to ICSE, State to ICSE
+  admissionType String    @default("Re-admission")
+  /// Right to Education quota student (fee rules differ)
+  rte           Boolean   @default(false)
+  /// Child of a staff member (reported as a group)
+  staffKid      Boolean   @default(false)
+  /// Transport distance slab, e.g. "1 to 2 km"; null = no school transport
+  transportSlab String?
+  /// Pickup & Drop, Pickup, Drop
+  pickupMode    String?
+  createdAt     DateTime  @default(now())
 
-  branch     Branch             @relation(fields: [branchId], references: [id])
-  class      SchoolClass?       @relation(fields: [classId], references: [id])
-  user       User?              @relation("StudentLogin", fields: [userId], references: [id])
-  guardians  StudentGuardian[]
-  attendance AttendanceRecord[]
-  enquiry    Enquiry?
+  branch         Branch             @relation(fields: [branchId], references: [id])
+  class          SchoolClass?       @relation(fields: [classId], references: [id])
+  user           User?              @relation("StudentLogin", fields: [userId], references: [id])
+  guardians      StudentGuardian[]
+  attendance     AttendanceRecord[]
+  enquiry        Enquiry?
+  feeAssignments FeeAssignment[]
 
   @@unique([branchId, admissionNo])
 }
@@ -366,4 +381,113 @@ model Notification {
   sentAt    DateTime?
 
   @@index([tenantId, createdAt])
+}
+
+/// Class band used to price the school fee, e.g. "G5–G7" = grades 5 to 7. Per branch.
+model FeeBand {
+  id        String @id @default(cuid())
+  branchId  String
+  name      String
+  fromGrade Int
+  toGrade   Int
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, name])
+}
+
+/// A fee "blueprint" for one branch and academic year: School Fees 26-27, Transportation Fees 26-27…
+model FeeType {
+  id             String   @id @default(cuid())
+  branchId       String
+  academicYearId String
+  /// SCHOOL (by band × admission type), TRANSPORT (by slab × pickup), APPLICATION (flat), CUSTOM
+  kind           String
+  name           String
+  /// [{ name, percent }] — how each installment splits into receipt components
+  components     Json?
+  /// false while amounts are placeholders awaiting the school's fee chart
+  ratesConfirmed Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  branch       Branch               @relation(fields: [branchId], references: [id])
+  academicYear AcademicYear         @relation(fields: [academicYearId], references: [id])
+  installments FeeInstallmentPlan[]
+  rates        FeeRate[]
+  assignments  FeeAssignment[]
+
+  @@unique([branchId, academicYearId, name])
+}
+
+/// Installment schedule of a fee type. The total is split equally (last one takes the rounding).
+model FeeInstallmentPlan {
+  id        String   @id @default(cuid())
+  feeTypeId String
+  seq       Int
+  label     String
+  dueDate   DateTime @db.Date
+
+  feeType FeeType @relation(fields: [feeTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([feeTypeId, seq])
+}
+
+/// One price in a fee type's chart. key = "<band>|<admission type>" (SCHOOL),
+/// "<slab>|<pickup mode>" (TRANSPORT) or "*" (APPLICATION).
+model FeeRate {
+  id        String @id @default(cuid())
+  feeTypeId String
+  key       String
+  /// Annual amount in whole rupees
+  amount    Int
+
+  feeType FeeType @relation(fields: [feeTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([feeTypeId, key])
+}
+
+/// A fee type assigned to one student (the POC's feeAssign). Its installments are FeeInvoice rows.
+/// Lifecycle: ASSIGNED → CONFIRMED → PUBLISHED (parents can see it); onlineEnabled once published.
+model FeeAssignment {
+  id            String    @id @default(cuid())
+  studentId     String
+  feeTypeId     String
+  /// What the price was based on, e.g. "G5–G7 · Re-admission" or "1 to 2 km · Pickup & Drop"
+  category      String
+  /// Annual amount at the time of assignment (later chart changes don't alter it)
+  gross         Int
+  status        String    @default("ASSIGNED")
+  onlineEnabled Boolean   @default(false)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  confirmedAt   DateTime?
+  publishedAt   DateTime?
+
+  student  Student      @relation(fields: [studentId], references: [id])
+  feeType  FeeType      @relation(fields: [feeTypeId], references: [id])
+  invoices FeeInvoice[]
+
+  @@unique([studentId, feeTypeId])
+  @@index([feeTypeId, status])
+}
+
+/// One installment a student owes. Amounts in whole rupees.
+/// Payments, concessions, adjustments and fines are filled in by later sprints.
+model FeeInvoice {
+  id           String   @id @default(cuid())
+  assignmentId String
+  studentId    String
+  seq          Int
+  label        String
+  dueDate      DateTime @db.Date
+  gross        Int
+  concession   Int      @default(0)
+  adjustment   Int      @default(0)
+  paid         Int      @default(0)
+
+  assignment FeeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, seq])
+  @@index([studentId])
 }

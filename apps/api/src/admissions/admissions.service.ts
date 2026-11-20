@@ -16,6 +16,7 @@ import { requireTenant } from '../common/scope';
 import { ScopeService } from '../common/scope.service';
 import { clean, emailOrNull, isoDate, optionalPhone, parseDate, phoneOrThrow, sentKeys } from '../common/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { FeesService } from '../fees/fees.service';
 import { StudentsService } from '../students/students.service';
 
 const include = {
@@ -42,6 +43,7 @@ export class AdmissionsService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly students: StudentsService,
+    private readonly fees: FeesService,
   ) {}
 
   async list(user: AuthUser, query: EnquiryQuery): Promise<EnquiryDto[]> {
@@ -214,7 +216,15 @@ export class AdmissionsService {
       // Guard against a double click enrolling twice: only one update can move Admitted → Enrolled.
       const { count } = await tx.enquiry.updateMany({ where: { id, stage: 'Admitted' }, data: { stage: 'Enrolled', studentId: s.id } });
       if (count !== 1) throw new ConflictException('This enquiry was just enrolled by someone else');
+      // Children coming through admissions are new admissions for fee purposes.
+      await tx.student.update({ where: { id: s.id }, data: { admissionType: 'New Admission' } });
+      const fees = await this.fees.assignOnEnrol(tx, s.id, user.id);
       await tx.enquiryActivity.create({ data: { enquiryId: id, kind: 'enrolled', text: `Enrolled as ${s.admissionNo}`, byId: user.id, byName: by } });
+      const feeNote = [
+        fees.assigned.length ? `Fees assigned for review: ${fees.assigned.join(', ')}. Confirm and publish them in Fees.` : '',
+        fees.missing.length ? `Not assigned: ${fees.missing.join('; ')}.` : '',
+      ].filter(Boolean).join(' ');
+      if (feeNote) await tx.enquiryActivity.create({ data: { enquiryId: id, kind: 'note', text: feeNote, byName: 'System', at: new Date(Date.now() + 1) } });
       return s;
     });
     await this.audit.record({ tenantId: e.tenantId, actorId: user.id, action: 'enquiry.enrol', entity: 'Enquiry', entityId: id, data: { studentId: student.id, admissionNo: student.admissionNo } });

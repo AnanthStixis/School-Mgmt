@@ -6,6 +6,8 @@ import { AdmissionsService } from './admissions/admissions.service';
 import { AttendanceController } from './attendance/attendance.controller';
 import { AttendanceService } from './attendance/attendance.service';
 import { AuditModule } from './audit/audit.service';
+import { FeesController } from './fees/fees.controller';
+import { FeesService } from './fees/fees.service';
 import { AuthModule } from './auth/auth.module';
 import { BranchesController } from './branches/branches.controller';
 import { ScopeModule } from './common/scope.service';
@@ -32,7 +34,8 @@ import { StudentsService } from './students/students.service';
     ImportsController,
     AdmissionsController,
     AttendanceController,
+    FeesController,
   ],
-  providers: [StaffService, StudentsService, AdmissionsService, AttendanceService],
+  providers: [StaffService, StudentsService, AdmissionsService, AttendanceService, FeesService],
 })
 export class AppModule {}

@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
 import { StudentAttendance } from './Attendance';
+import { StudentFees } from './Fees';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, PageHeader, Pager, Select, Table, statusTone } from '../components/ui';
 
 const PAGE_SIZE = 25;
@@ -97,6 +98,7 @@ export function StudentDetail() {
   const { isManager } = useScope();
   const { user } = useAuth();
   const showAttendance = !!user && canAccess('attendance', user.role);
+  const showFees = user?.role === 'accounts' || user?.role === 'manager';
   const q = useQuery({ queryKey: ['student', id], queryFn: () => api.student(id) });
   const [editing, setEditing] = useState(false);
   if (q.isLoading) return <Loading />;
@@ -170,7 +172,14 @@ export function StudentDetail() {
           <StudentAttendance studentId={s.id} compact />
         </Card>
       </div>}
-      <p className="mt-4 text-sm text-muted">Marks and fees for this student appear here as those modules are built.</p>
+      {showFees && (
+        <div className="mt-4">
+          <Card title="Fees" actions={<Link to="/fees" className="text-sm">Fees & Invoices →</Link>}>
+            <StudentFees studentId={s.id} staff />
+          </Card>
+        </div>
+      )}
+      <p className="mt-4 text-sm text-muted">Marks for this student appear here when the exams module is built.</p>
       {editing && <StudentForm student={s} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />}
     </div>
   );
