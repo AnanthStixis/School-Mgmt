@@ -1,3 +1,5 @@
+import type { RefundDto } from './corrections';
+
 /** Fee collection contracts — sprint 5: counter payments, late fee, receipts, cancellation. */
 
 /** Default late fee when a branch has not set its own (inferred from the existing system's reports). */
@@ -145,6 +147,9 @@ export interface ReceiptDto extends ReceiptListItem {
   createdAt: string;
   cancelledAt: string | null;
   cancelReason: string | null;
+  refunds: RefundDto[];
+  /** Fee amount on this receipt not yet refunded (0 if cancelled or awaiting the bank) */
+  refundable: number;
 }
 
 export interface ReceiptRegisterDto {

@@ -230,6 +230,8 @@ model Student {
   enquiry        Enquiry?
   feeAssignments FeeAssignment[]
   feeReceipts    FeeReceipt[]
+  feeCorrections FeeCorrection[]
+  feeRefunds     FeeRefund[]
 
   @@unique([branchId, admissionNo])
 }
@@ -472,9 +474,10 @@ model FeeAssignment {
   confirmedAt   DateTime?
   publishedAt   DateTime?
 
-  student  Student      @relation(fields: [studentId], references: [id])
-  feeType  FeeType      @relation(fields: [feeTypeId], references: [id])
-  invoices FeeInvoice[]
+  student     Student         @relation(fields: [studentId], references: [id])
+  feeType     FeeType         @relation(fields: [feeTypeId], references: [id])
+  invoices    FeeInvoice[]
+  corrections FeeCorrection[]
 
   @@unique([studentId, feeTypeId])
   @@index([feeTypeId, status])
@@ -495,6 +498,8 @@ model FeeInvoice {
   paid         Int       @default(0)
   finePaid     Int       @default(0)
   fineWaived   Int       @default(0)
+  /// Money paid back against receipts (does not change the balance; collected net = paid − refunded)
+  refunded     Int       @default(0)
   /// Set when the late fee so far is settled (paid or waived); it restarts from this day.
   fineFrom     DateTime? @db.Date
 
@@ -543,6 +548,7 @@ model FeeReceipt {
   branch       Branch           @relation(fields: [branchId], references: [id])
   academicYear AcademicYear     @relation(fields: [academicYearId], references: [id])
   lines        FeeReceiptLine[]
+  refunds      FeeRefund[]
 
   @@unique([tenantId, no])
   @@index([branchId, date])
@@ -574,4 +580,56 @@ model ReceiptSequence {
   last      Int    @default(0)
 
   @@id([tenantId, yearLabel])
+}
+
+/// A correction to a student's fees, with who and why: CONCESSION (replaces the previous one on the
+/// assignment), ADJUSTMENT (write-off of the unpaid part, e.g. a student leaving) or FINE_WAIVER.
+model FeeCorrection {
+  id            String   @id @default(cuid())
+  tenantId      String
+  branchId      String
+  studentId     String
+  assignmentId  String
+  kind          String
+  /// Total of this correction in rupees (for a concession: the new total concession on the assignment)
+  amount        Int
+  /// [{ invoiceId, label, amount }] plus how it was spread, e.g. { method: "Equal", percent: 10 }
+  detail        Json
+  remarks       String
+  createdById   String
+  createdByName String
+  createdAt     DateTime @default(now())
+
+  student    Student       @relation(fields: [studentId], references: [id])
+  assignment FeeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind, createdAt])
+  @@index([assignmentId])
+}
+
+/// Money paid back against a receipt (usually by cheque when a student leaves). One receipt can have several.
+model FeeRefund {
+  id            String   @id @default(cuid())
+  tenantId      String
+  branchId      String
+  studentId     String
+  receiptId     String
+  amount        Int
+  date          DateTime @db.Date
+  mode          String
+  bank          String?
+  instrumentNo  String?
+  remarks       String
+  /// [{ invoiceId, amount }]
+  allocation    Json
+  status        String   @default("Completed")
+  createdById   String
+  createdByName String
+  createdAt     DateTime @default(now())
+
+  student Student    @relation(fields: [studentId], references: [id])
+  receipt FeeReceipt @relation(fields: [receiptId], references: [id])
+
+  @@index([tenantId, date])
+  @@index([receiptId])
 }

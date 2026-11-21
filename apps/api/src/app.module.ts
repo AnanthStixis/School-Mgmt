@@ -7,6 +7,8 @@ import { AttendanceController } from './attendance/attendance.controller';
 import { AttendanceService } from './attendance/attendance.service';
 import { AuditModule } from './audit/audit.service';
 import { CollectionController } from './fees/collection.controller';
+import { CorrectionsController } from './fees/corrections.controller';
+import { CorrectionsService } from './fees/corrections.service';
 import { CollectionService } from './fees/collection.service';
 import { FeesController } from './fees/fees.controller';
 import { FeesService } from './fees/fees.service';
@@ -40,7 +42,8 @@ import { StudentLoginsController, StudentLoginsService } from './students/studen
     AttendanceController,
     FeesController,
     CollectionController,
+    CorrectionsController,
   ],
-  providers: [StaffService, StudentsService, StudentLoginsService, AdmissionsService, AttendanceService, FeesService, CollectionService],
+  providers: [StaffService, StudentsService, StudentLoginsService, AdmissionsService, AttendanceService, FeesService, CollectionService, CorrectionsService],
 })
 export class AppModule {}

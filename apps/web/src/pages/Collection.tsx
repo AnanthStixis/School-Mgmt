@@ -17,6 +17,7 @@ import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, Table } from '../components/ui';
 import { inr } from './Fees';
+import { RefundModal } from './Corrections';
 
 const todayISO = () => new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
 const RECON_TONE: Record<ReconStatus, 'gray' | 'amber' | 'green' | 'red'> = { NA: 'gray', PENDING: 'amber', DONE: 'green', FAILED: 'red' };
@@ -433,6 +434,7 @@ export function ReceiptPage() {
     void qc.invalidateQueries({ queryKey: ['student-fees', r.studentId] });
   };
   const cancel = useMutation({ mutationFn: (reason: string) => api.cancelReceipt(id, reason), onSuccess: done });
+  const [refunding, setRefunding] = useState(false);
   const recon = useMutation({ mutationFn: (ok: boolean) => api.reconcileReceipt(id, ok), onSuccess: done });
 
   if (q.isLoading) return <Loading />;
@@ -467,10 +469,13 @@ export function ReceiptPage() {
                 </Button>
               </>
             )}
+            {r.refundable > 0 && <Button onClick={() => setRefunding(true)}>Refund…</Button>}
+            {refunding && <RefundModal r={r} onDone={done} onClose={() => setRefunding(false)} />}
             <Button
               variant="ghost"
+              disabled={cancel.isPending || r.refunds.length > 0}
+              title={r.refunds.length ? 'A receipt with refunds cannot be cancelled' : undefined}
               className="ml-auto text-red-700"
-              disabled={cancel.isPending}
               onClick={() => {
                 const reason = prompt(`Cancel receipt ${r.no}? The amounts go back onto the installments. Reason:`);
                 if (reason) cancel.mutate(reason);
@@ -560,6 +565,15 @@ export function ReceiptPage() {
               <dd>{r.remarks}</dd>
             </>
           )}
+          {r.refunds.map((f) => (
+            <div key={f.id} className="contents">
+              <dt className="text-amber-800">Refunded</dt>
+              <dd className="text-amber-800">
+                {inr(f.amount)} on {f.date} by {f.mode}
+                {f.instrumentNo ? ` ${f.instrumentNo}` : ''} — {f.remarks}
+              </dd>
+            </div>
+          ))}
           {cancelled && (
             <>
               <dt className="text-red-700">Cancelled</dt>

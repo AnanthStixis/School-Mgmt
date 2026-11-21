@@ -10,6 +10,7 @@ import {
   type FeeActionResult,
   type FeeAssignmentDto,
   type FeeBandDto,
+  type FeeInvoiceDto,
   type FeeInstallmentDto,
   type FeeKind,
   type FeeTypeDto,
@@ -19,6 +20,7 @@ import {
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { CollectPanel, ReceiptRegister, StudentReceipts } from './Collection';
+import { ConcessionModal, CorrectionsHistory, FeeReports, WaiveFineModal, WriteOffModal } from './Corrections';
 import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
 import { NeedsBranch } from '../components/BranchPicker';
@@ -34,7 +36,7 @@ export function Fees() {
   return <StaffFees />;
 }
 
-type Tab = 'collect' | 'receipts' | 'overview' | 'assign' | 'setup';
+type Tab = 'collect' | 'receipts' | 'reports' | 'overview' | 'assign' | 'setup';
 function StaffFees() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'collect');
@@ -45,6 +47,7 @@ function StaffFees() {
         items={[
           ['collect', 'Collect'],
           ['receipts', 'Receipts'],
+          ['reports', 'Reports'],
           ['overview', 'Overview'],
           ['assign', 'Assign & publish'],
           ['setup', 'Fee setup'],
@@ -54,6 +57,7 @@ function StaffFees() {
       />
       {tab === 'collect' && <CollectPanel initialStudentId={params.get('student') ?? undefined} />}
       {tab === 'receipts' && <ReceiptRegister />}
+      {tab === 'reports' && <FeeReports />}
       {tab === 'overview' && <Overview onSetup={() => setTab('setup')} />}
       {tab === 'assign' && <NeedsBranch>{(b) => <AssignPublish key={b} branchId={b} />}</NeedsBranch>}
       {tab === 'setup' && <NeedsBranch>{(b) => <FeeSetup key={b} branchId={b} />}</NeedsBranch>}
@@ -599,15 +603,19 @@ export function StudentFees({ studentId, staff }: { studentId: string; staff?: b
       </div>
       {!f.assignments.length && <p className="text-sm text-muted">{staff ? 'No fees assigned yet.' : 'No fees have been published yet.'}</p>}
       {f.assignments.map((a) => (
-        <AssignmentTable key={a.id} a={a} staff={staff} />
+        <AssignmentTable key={a.id} a={a} staff={staff} studentId={f.studentId} />
       ))}
       <StudentReceipts studentId={f.studentId} />
+      {staff && <CorrectionsHistory studentId={f.studentId} />}
       {editing && <FeeProfileForm f={f} onClose={() => setEditing(false)} />}
     </div>
   );
 }
 
-function AssignmentTable({ a, staff }: { a: FeeAssignmentDto; staff?: boolean }) {
+function AssignmentTable({ a, staff, studentId }: { a: FeeAssignmentDto; staff?: boolean; studentId: string }) {
+  const [modal, setModal] = useState<'concession' | 'writeoff' | null>(null);
+  const [waive, setWaive] = useState<FeeInvoiceDto | null>(null);
+  const writtenOff = a.invoices.some((i) => i.adjustment > 0);
   return (
     <div className="rounded-lg border border-line p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
@@ -615,7 +623,20 @@ function AssignmentTable({ a, staff }: { a: FeeAssignmentDto; staff?: boolean })
         <span className="text-muted">{a.category}</span>
         {staff && <Badge tone={STATUS_TONE[a.status]}>{STATUS_LABEL[a.status]}</Badge>}
         {a.onlineEnabled && <Badge tone="green">Online payment on</Badge>}
+        {staff && (
+          <span className="ml-auto flex gap-1">
+            <Button variant="ghost" onClick={() => setModal('concession')}>
+              Concession
+            </Button>
+            <Button variant="ghost" disabled={!a.totals.balance} onClick={() => setModal('writeoff')}>
+              Write off
+            </Button>
+          </span>
+        )}
       </div>
+      {modal === 'concession' && <ConcessionModal a={a} studentId={studentId} onClose={() => setModal(null)} />}
+      {modal === 'writeoff' && <WriteOffModal a={a} studentId={studentId} onClose={() => setModal(null)} />}
+      {waive && <WaiveFineModal i={waive} studentId={studentId} onClose={() => setWaive(null)} />}
       <Table
         rows={a.invoices}
         rowKey={(i) => i.id}
@@ -624,9 +645,26 @@ function AssignmentTable({ a, staff }: { a: FeeAssignmentDto; staff?: boolean })
           { header: 'Due', cell: (i) => i.dueDate },
           { header: 'Amount', cell: (i) => inr(i.gross), className: 'text-right' },
           { header: 'Concession', cell: (i) => (i.concession ? inr(i.concession) : '—'), className: 'text-right' },
+          ...(writtenOff ? [{ header: 'Written off', cell: (i: FeeInvoiceDto) => (i.adjustment ? inr(i.adjustment) : '—'), className: 'text-right' }] : []),
           { header: 'Paid', cell: (i) => (i.paid ? inr(i.paid) : '—'), className: 'text-right' },
           { header: 'Balance', cell: (i) => inr(Math.max(0, i.balance)), className: 'text-right' },
-          { header: 'Late fee', cell: (i) => (i.lateFee ? <span className="text-red-700">{inr(i.lateFee)}</span> : '—'), className: 'text-right' },
+          {
+            header: 'Late fee',
+            className: 'text-right',
+            cell: (i) =>
+              i.lateFee ? (
+                <span className="whitespace-nowrap text-red-700">
+                  {inr(i.lateFee)}
+                  {staff && (
+                    <button className="ml-2 text-xs font-semibold text-brand" onClick={() => setWaive(i)}>
+                      Waive
+                    </button>
+                  )}
+                </span>
+              ) : (
+                '—'
+              ),
+          },
           { header: 'Status', cell: (i) => <Badge tone={STATUS_TONE[i.status as InvoiceStatus]}>{i.status}</Badge> },
         ]}
       />

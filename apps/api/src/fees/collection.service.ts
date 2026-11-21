@@ -14,6 +14,7 @@ import {
   type ReceiptRegisterDto,
   type ReceiptStatus,
   type ReconStatus,
+  type RefundDto,
 } from '@sms/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth-user';
@@ -30,13 +31,14 @@ const COLLECTABLE = ['CONFIRMED', 'PUBLISHED'];
 const INSTRUMENT_VALID_DAYS = 90;
 const REGISTER_MAX_DAYS = 366;
 
-const receiptInclude = {
+export const receiptInclude = {
   student: { select: { name: true, admissionNo: true, class: { select: { name: true } }, guardians: { select: { userId: true } } } },
   branch: { select: { name: true, address: true, tenant: { select: { name: true, trust: true } } } },
   academicYear: { select: { label: true } },
   lines: { orderBy: { id: 'asc' } },
+  refunds: { orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.FeeReceiptInclude;
-type ReceiptFull = Prisma.FeeReceiptGetPayload<{ include: typeof receiptInclude }>;
+export type ReceiptFull = Prisma.FeeReceiptGetPayload<{ include: typeof receiptInclude }>;
 
 const net = (i: { gross: number; concession: number; adjustment: number }) => i.gross - i.concession - i.adjustment;
 const fineFromOf = (i: { fineFrom: Date | null }) => (i.fineFrom ? dayString(i.fineFrom) : null);
@@ -226,6 +228,7 @@ export class CollectionService {
       include: { receipt: { select: { no: true } } },
     });
     if (later) throw new BadRequestException(`Receipt ${later.receipt.no} was issued later for the same installment; cancel it first`);
+    if (r.refunds.length) throw new BadRequestException(`Receipt ${r.no} has refunds against it and can't be cancelled`);
 
     const done = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.feeReceipt.updateMany({ where: { id: r.id, status: 'SUCCESS' }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledById: user.id, cancelReason: why, recon: opts.recon ?? 'NA' } });
@@ -305,7 +308,7 @@ export class CollectionService {
 
   // ---------- helpers ----------
 
-  private async findStudent(user: AuthUser, studentId: string) {
+  async findStudent(user: AuthUser, studentId: string) {
     const tenantId = requireTenant(user);
     const notFound = new NotFoundException('Student not found');
     const s = await this.prisma.student.findUnique({
@@ -317,7 +320,7 @@ export class CollectionService {
     return s;
   }
 
-  private async findReceipt(user: AuthUser, id: string): Promise<ReceiptFull> {
+  async findReceipt(user: AuthUser, id: string): Promise<ReceiptFull> {
     const tenantId = requireTenant(user);
     const notFound = new NotFoundException('Receipt not found');
     const r = await this.prisma.feeReceipt.findUnique({ where: { id }, include: receiptInclude });
@@ -358,7 +361,7 @@ const listItem = (r: ReceiptFull): ReceiptListItem => ({
   createdByName: r.createdByName,
 });
 
-const receiptDto = (r: ReceiptFull): ReceiptDto => ({
+export const receiptDto = (r: ReceiptFull): ReceiptDto => ({
   ...listItem(r),
   schoolName: r.branch.tenant.name,
   trust: r.branch.tenant.trust,
@@ -374,4 +377,32 @@ const receiptDto = (r: ReceiptFull): ReceiptDto => ({
   createdAt: r.createdAt.toISOString(),
   cancelledAt: r.cancelledAt?.toISOString() ?? null,
   cancelReason: r.cancelReason,
+  refunds: r.refunds.map((f) => refundDto({ ...f, receipt: r })),
+  refundable: refundableOf(r),
+});
+
+/** Fee money on a receipt that can still be paid back. Late fees are not refundable; nothing is while the bank hasn't confirmed. */
+export const refundableOf = (r: { status: string; recon: string; feeTotal: number; refunds: { amount: number }[] }) =>
+  r.status !== 'SUCCESS' || r.recon === 'PENDING' ? 0 : r.feeTotal - r.refunds.reduce((n, f) => n + f.amount, 0);
+
+export const refundDto = (
+  f: Prisma.FeeRefundGetPayload<object> & { receipt: { no: string; studentId: string; student: { name: string; admissionNo: string; class: { name: string } | null }; branch: { name: string } } },
+): RefundDto => ({
+  id: f.id,
+  receiptId: f.receiptId,
+  receiptNo: f.receipt.no,
+  date: dayString(f.date),
+  studentId: f.studentId,
+  studentName: f.receipt.student.name,
+  admissionNo: f.receipt.student.admissionNo,
+  className: f.receipt.student.class?.name ?? null,
+  branchName: f.receipt.branch.name,
+  amount: f.amount,
+  mode: f.mode as PaymentMode,
+  bank: f.bank,
+  instrumentNo: f.instrumentNo,
+  remarks: f.remarks,
+  status: f.status,
+  createdByName: f.createdByName,
+  createdAt: f.createdAt.toISOString(),
 });

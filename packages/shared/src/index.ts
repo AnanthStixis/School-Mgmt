@@ -6,3 +6,4 @@ export * from './admissions';
 export * from './attendance';
 export * from './fees';
 export * from './collection';
+export * from './corrections';

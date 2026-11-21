@@ -183,7 +183,7 @@ async function main() {
           status: 'Active',
           userId: studentUserId,
         };
-        const st = await prisma.student.upsert({ where: { branchId_admissionNo: { branchId, admissionNo } }, update: data, create: { branchId, admissionNo, ...data } });
+        const st = await prisma.student.upsert({ where: { branchId_admissionNo: { branchId, admissionNo } }, update: { ...data, status: undefined }, create: { branchId, admissionNo, ...data } });
         if (studentUserId) await prisma.user.update({ where: { id: studentUserId }, data: { username: admissionNo.toUpperCase(), passwordHash } });
         studentCount++;
 
@@ -434,7 +434,44 @@ async function main() {
     });
   }
 
-  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days, ${feeAssignments} new fee assignments, ${receiptCount} past receipts`);
+  // ---------- demo corrections ----------
+  // A few sibling / mid-year concessions on the unpaid installments, and one write-off for a student who left,
+  // in the existing system's wording. Runs only once.
+  let correctionCount = 0;
+  if (!(await prisma.feeCorrection.count({ where: { tenantId: tenant.id } }))) {
+    const accountant = await prisma.user.findUniqueOrThrow({ where: { id: uid.accounts } });
+    const school = await prisma.feeAssignment.findMany({
+      where: { status: 'PUBLISHED', feeType: { kind: 'SCHOOL', academicYearId: year.id }, student: { name: { notIn: ['Aarav Menon', 'Diya Menon'] } } },
+      include: { invoices: { orderBy: { seq: 'asc' } }, student: { select: { branchId: true } } },
+      orderBy: { id: 'asc' },
+    });
+    const reasons = ['SIBLING IN 2ND STD', 'SIBLING AT IX STD', 'Joined mid-year (shifted from another school)', 'Management decision', 'Staff child'];
+    for (const [k, a] of school.entries()) {
+      const unpaid = a.invoices.filter((i) => i.paid === 0);
+      if (k % 23 !== 4 || unpaid.length < 2) continue;
+      const amount = pick([4000, 5000, 10000]);
+      const each = Math.floor(amount / unpaid.length);
+      const parts = unpaid.map((i, n) => ({ invoiceId: i.id, label: i.label, amount: n === unpaid.length - 1 ? amount - each * (unpaid.length - 1) : each }));
+      for (const p of parts) await prisma.feeInvoice.update({ where: { id: p.invoiceId }, data: { concession: p.amount } });
+      await prisma.feeCorrection.create({
+        data: { tenantId: tenant.id, branchId: a.student.branchId, studentId: a.studentId, assignmentId: a.id, kind: 'CONCESSION', amount, detail: { lines: parts, method: 'Equal', basis: 'amount', value: amount, previous: 0 }, remarks: reasons[correctionCount % reasons.length], createdById: accountant.id, createdByName: accountant.name, createdAt: new Date('2026-09-15T05:30:00Z') },
+      });
+      correctionCount++;
+    }
+    const leaver = school.find((a, k) => k % 41 === 17 && a.invoices.some((i) => i.paid === 0));
+    if (leaver) {
+      const open = leaver.invoices.filter((i) => i.gross - i.concession - i.paid > 0);
+      const amount = open.reduce((n, i) => n + i.gross - i.concession - i.paid, 0);
+      for (const i of open) await prisma.feeInvoice.update({ where: { id: i.id }, data: { adjustment: i.gross - i.concession - i.paid } });
+      await prisma.feeCorrection.create({
+        data: { tenantId: tenant.id, branchId: leaver.student.branchId, studentId: leaver.studentId, assignmentId: leaver.id, kind: 'ADJUSTMENT', amount, detail: { lines: open.map((i) => ({ invoiceId: i.id, label: i.label, amount: i.gross - i.concession - i.paid })) }, remarks: `The total adjustment amount ₹${amount.toLocaleString('en-IN')} out of a total amount of ₹${leaver.gross.toLocaleString('en-IN')} (T C taken)`, createdById: accountant.id, createdByName: accountant.name, createdAt: new Date('2026-10-20T05:30:00Z') },
+      });
+      await prisma.student.update({ where: { id: leaver.studentId }, data: { status: 'Left' } });
+      correctionCount++;
+    }
+  }
+
+  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days, ${feeAssignments} new fee assignments, ${receiptCount} past receipts, ${correctionCount} demo corrections`);
 }
 
 main()
