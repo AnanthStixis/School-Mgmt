@@ -1,13 +1,20 @@
 /** Fees contracts — sprint 4: fee setup, assignment and publishing. Collection is in collection.ts. */
 
-export const FEE_KINDS = ['SCHOOL', 'TRANSPORT', 'APPLICATION', 'CUSTOM'] as const;
+export const FEE_KINDS = ['SCHOOL', 'TRANSPORT', 'APPLICATION', 'CUSTOM', 'PREVIOUS'] as const;
 export type FeeKind = (typeof FEE_KINDS)[number];
 export const FEE_KIND_LABEL: Record<FeeKind, string> = {
   SCHOOL: 'School fee (by class band and admission type)',
   TRANSPORT: 'Transport fee (by distance slab and pickup mode)',
   APPLICATION: 'Application fee (one amount for everyone)',
   CUSTOM: 'Custom fee (amount set when assigning)',
+  PREVIOUS: 'Previous-year balance (imported from the old system)',
 };
+/** Fee kinds Accounts can create by hand (previous-year balances only come from the import). */
+export const CREATABLE_FEE_KINDS: readonly FeeKind[] = ['SCHOOL', 'TRANSPORT', 'APPLICATION', 'CUSTOM'];
+/** Kinds priced from a rate chart (the others take an amount per student). */
+export const hasRateChart = (k: string) => k === 'SCHOOL' || k === 'TRANSPORT' || k === 'APPLICATION';
+/** The existing system charges no late fee on previous-year balances. */
+export const chargesLateFee = (k: string) => k !== 'PREVIOUS';
 
 export const ADMISSION_TYPES = ['Re-admission', 'New Admission', 'UKG to ICSE', 'State to ICSE'] as const;
 export type AdmissionType = (typeof ADMISSION_TYPES)[number];

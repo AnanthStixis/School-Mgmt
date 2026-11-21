@@ -1,4 +1,5 @@
 import type {
+  ParallelRunDto,
   DevOutcome,
   OnlinePaymentsReportDto,
   PaymentAttemptDto,
@@ -173,8 +174,8 @@ export const api = {
   createStudent: (b: StudentInput) => call<StudentDto>('POST', '/students', b),
   updateStudent: (id: string, b: Partial<StudentInput>) => call<StudentDto>('PATCH', `/students/${id}`, b),
 
-  importTemplate: (kind: 'students' | 'staff') => call<string>('GET', `/imports/${kind}/template`, undefined, true),
-  importCsv: (kind: 'students' | 'staff', branchId: string, csv: string, dryRun: boolean) => call<ImportResult>('POST', `/imports/${kind}`, { branchId, csv, dryRun }),
+  importTemplate: (kind: 'students' | 'staff' | 'balances') => call<string>('GET', `/imports/${kind}/template`, undefined, true),
+  importCsv: (kind: 'students' | 'staff' | 'balances', branchId: string, csv: string, dryRun: boolean) => call<ImportResult>('POST', `/imports/${kind}`, { branchId, csv, dryRun }),
 
   enquiries: (p: { branchId?: string; academicYearId?: string; q?: string; includeClosed?: boolean }) =>
     call<EnquiryDto[]>('GET', `/enquiries${qs({ ...p, includeClosed: p.includeClosed ? 'true' : undefined })}`),
@@ -226,6 +227,7 @@ export const api = {
   payment: (orderId: string) => call<PaymentAttemptDto>('GET', `/payments/online/${encodeURIComponent(orderId)}`),
   devCompletePayment: (orderId: string, outcome: DevOutcome, mode: string) => call<PaymentAttemptDto>('POST', `/payments/dev/${encodeURIComponent(orderId)}/complete`, { outcome, mode }),
   onlinePayments: (p: { branchId?: string; from?: string; to?: string; status?: string }) => call<OnlinePaymentsReportDto>('GET', `/payments/online${qs(p)}`),
+  parallelRun: (p: { branchId?: string; csv: string }) => call<ParallelRunDto>('POST', '/fees/parallel-run', p),
   sendReminders: (p: { branchId?: string; classId?: string }) => call<ReminderResult>('POST', '/fees/reminders', p),
   studentReceipts: (studentId: string) => call<ReceiptListItem[]>('GET', `/fees/students/${studentId}/receipts`),
   updateFeeProfile: (id: string, b: Partial<FeeProfile>) => call<FeeProfile>('PATCH', `/fees/students/${id}/profile`, b),

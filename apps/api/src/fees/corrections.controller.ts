@@ -10,6 +10,7 @@ import {
   type CorrectionsReportDto,
   type DuesReportDto,
   type FineWaiverInput,
+  type ParallelRunDto,
   type PaymentMode,
   type ReceiptDto,
   type RefundInput,
@@ -20,6 +21,7 @@ import { IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, Min
 import type { AuthUser } from '../auth/auth-user';
 import { CurrentUser, RequireModule, Roles } from '../auth/decorators';
 import { CorrectionsService } from './corrections.service';
+import { ParallelRunService } from './parallel-run';
 
 const REASON = { message: 'Give a reason (it appears on the reports)' };
 
@@ -48,6 +50,11 @@ class ReminderDto implements ReminderInput {
   @IsOptional() @IsString() classId?: string;
 }
 
+class ParallelRunDtoIn {
+  @IsOptional() @IsString() branchId?: string;
+  @IsString() @Length(1, 10_000_000) csv!: string;
+}
+
 class RefundDtoIn implements RefundInput {
   @IsString() receiptId!: string;
   @IsInt() @Min(1) @Max(10_000_000) amount!: number;
@@ -62,7 +69,17 @@ class RefundDtoIn implements RefundInput {
 @RequireModule('fees')
 @Roles('accounts', 'manager')
 export class CorrectionsController {
-  constructor(private readonly corrections: CorrectionsService) {}
+  constructor(
+    private readonly corrections: CorrectionsService,
+    private readonly parallel: ParallelRunService,
+  ) {}
+
+  /** Compare an uploaded SchoolElement Daily Transaction export with our receipts. */
+  @Post('parallel-run')
+  @HttpCode(200)
+  parallelRun(@CurrentUser() user: AuthUser, @Body() dto: ParallelRunDtoIn): Promise<ParallelRunDto> {
+    return this.parallel.compare(user, dto);
+  }
 
   @Post('concessions')
   concession(@CurrentUser() user: AuthUser, @Body() dto: ConcessionDto): Promise<CorrectionDto> {

@@ -182,8 +182,11 @@ describe('Academic setup, staff and students (e2e)', () => {
       expect(await prisma.student.count({ where: { name: { startsWith: `${TAG} Imp` } } })).toBe(2);
     });
 
-    it('rejects unknown columns', () =>
-      http.post('/api/imports/students').set(as('bm')).send({ branchId: ps, csv: 'name,shoe_size,guardian_name,guardian_phone\nA,9,G,9876543210', dryRun: true }).expect(400));
+    it('leaves out and lists columns it does not use (students); refuses them for staff', async () => {
+      const r = await http.post('/api/imports/students').set(as('bm')).send({ branchId: ps, csv: 'name,shoe_size,guardian_name,guardian_phone\nAb Cd,9,Gh Ij,9876543210', dryRun: true }).expect(201);
+      expect(r.body.ignoredColumns).toEqual(['shoe_size']);
+      await http.post('/api/imports/staff').set(as('bm')).send({ branchId: ps, csv: 'name,role,shoe_size\nAb Cd,Teacher,9', dryRun: true }).expect(400);
+    });
 
     it('is not available to teachers', () => http.post('/api/imports/students').set(as('teacher')).send({ branchId: ps, csv: 'name\nA' }).expect(403));
   });

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { PaymentAttempt, Prisma } from '@prisma/client';
-import { lateFee, type DevOutcome, type OnlinePaymentsReportDto, type PaymentAttemptDto, type PaymentLine, type PaymentStatus, type StartPaymentDto, type StartPaymentInput } from '@sms/shared';
+import { chargesLateFee, lateFee, type DevOutcome, type OnlinePaymentsReportDto, type PaymentAttemptDto, type PaymentLine, type PaymentStatus, type StartPaymentDto, type StartPaymentInput } from '@sms/shared';
 import { randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth-user';
@@ -50,7 +50,7 @@ export class PaymentsService {
     const s = await this.collection.findStudent(user, input.studentId);
     const ids = [...new Set(input.invoiceIds)];
     if (!ids.length) throw new BadRequestException('Choose at least one installment');
-    const invoices = await this.prisma.feeInvoice.findMany({ where: { id: { in: ids }, studentId: s.id }, include: { assignment: { include: { feeType: { select: { name: true } } } } }, orderBy: [{ dueDate: 'asc' }, { seq: 'asc' }] });
+    const invoices = await this.prisma.feeInvoice.findMany({ where: { id: { in: ids }, studentId: s.id }, include: { assignment: { include: { feeType: { select: { name: true, kind: true } } } } }, orderBy: [{ dueDate: 'asc' }, { seq: 'asc' }] });
     if (invoices.length !== ids.length) throw new NotFoundException('Installment not found');
     const pending = await this.prisma.paymentAttempt.findFirst({ where: { studentId: s.id, status: 'PENDING', createdAt: { gt: new Date(Date.now() - 86_400_000) } } });
     if (pending) throw new ConflictException(`An earlier payment (${pending.orderId}) is still waiting for the bank. Please try again after it completes.`);
@@ -62,7 +62,7 @@ export class PaymentsService {
       if (i.assignment.status !== 'PUBLISHED' || !i.assignment.onlineEnabled) throw new BadRequestException(`${label} can't be paid online yet; please pay at the school office`);
       const balance = net(i) - i.paid;
       if (balance <= 0) throw new BadRequestException(`${label} is already paid`);
-      return { invoiceId: i.id, label, fee: balance, fine: lateFee({ balance, dueDate: dayString(i.dueDate), fineFrom: fineFromOf(i) }, today, perDay) };
+      return { invoiceId: i.id, label, fee: balance, fine: lateFee({ balance, dueDate: dayString(i.dueDate), fineFrom: fineFromOf(i) }, today, chargesLateFee(i.assignment.feeType.kind) ? perDay : 0) };
     });
     const amount = lines.reduce((n, l) => n + l.fee + l.fine, 0);
     const orderId = `${s.branch.code}-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString('hex').toUpperCase()}`;

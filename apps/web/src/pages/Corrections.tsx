@@ -12,6 +12,7 @@ import {
   type FeeAssignmentDto,
   type FeeInvoiceDto,
   type PaymentMode,
+  type ParallelStatus,
   type ReceiptDto,
 } from '@sms/shared';
 import { api } from '../lib/api';
@@ -285,7 +286,7 @@ function downloadCsv(name: string, rows: (string | number | null)[][]) {
   URL.revokeObjectURL(a.href);
 }
 
-type ReportTab = 'dues' | 'classes' | 'corrections';
+type ReportTab = 'dues' | 'classes' | 'corrections' | 'parallel';
 export function FeeReports() {
   const [tab, setTab] = useState<ReportTab>('dues');
   return (
@@ -295,13 +296,18 @@ export function FeeReports() {
           ['dues', 'Dues'],
           ['classes', 'Class summary'],
           ['corrections', 'Concessions & refunds'],
+          ['parallel', 'Parallel run'],
         ]}
         value={tab}
         onChange={setTab}
       />
+      <p className="text-sm">
+        Moving from SchoolElement? <Link to="/import/balances">Import previous-year balances →</Link>
+      </p>
       {tab === 'dues' && <DuesReport />}
       {tab === 'classes' && <ClassSummary />}
       {tab === 'corrections' && <CorrectionsReport />}
+      {tab === 'parallel' && <ParallelRun />}
     </div>
   );
 }
@@ -491,6 +497,89 @@ function CorrectionsReport() {
             </Card>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ======================= parallel run with SchoolElement =======================
+
+const PARALLEL_LABEL: Record<ParallelStatus, [string, 'green' | 'amber' | 'red' | 'blue']> = {
+  MATCH: ['Same', 'green'],
+  DIFFERENT: ['Different amount', 'red'],
+  ONLY_THEIRS: ['Only in SchoolElement', 'amber'],
+  ONLY_OURS: ['Only here', 'blue'],
+};
+
+/** Upload SchoolElement's Daily Transaction export and see where the two systems disagree. Nothing is saved. */
+function ParallelRun() {
+  const { branchId } = useScope();
+  const [onlyDiff, setOnlyDiff] = useState(true);
+  const run = useMutation({ mutationFn: (csv: string) => api.parallelRun({ branchId, csv }) });
+  const d = run.data;
+  const rows = d ? (onlyDiff ? d.rows.filter((r) => r.status !== 'MATCH') : d.rows) : [];
+  return (
+    <div className="space-y-4">
+      <Card title="Compare with SchoolElement">
+        <p className="mb-2 text-sm text-muted">
+          While both systems are in use, export SchoolElement's <b>Daily Transaction</b> report as CSV (any date range) and upload it here. Each student's payments for each day are compared with the receipts in this system. Receipt numbers differ between the systems, so the match is on admission number, date and amount. Nothing is saved.
+        </p>
+        <input type="file" accept=".csv,text/csv" className="text-sm" onChange={async (e) => { const f = e.target.files?.[0]; if (f) run.mutate(await f.text()); }} />
+        {run.isPending && <p className="mt-2 text-muted">Comparing…</p>}
+        <div className="mt-2">
+          <ErrorBox error={run.error} />
+        </div>
+      </Card>
+      {d && (
+        <Card
+          title={`${d.from === d.to ? d.from : `${d.from} to ${d.to}`}: SchoolElement ${inr(d.totals.theirs)} · this system ${inr(d.totals.ours)}`}
+          actions={
+            <span className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={onlyDiff} onChange={(e) => setOnlyDiff(e.target.checked)} /> Differences only
+              </label>
+              <Button
+                onClick={() =>
+                  downloadCsv(`parallel-run-${d.from}-${d.to}.csv`, [
+                    ['Date', 'Admission no', 'Student', 'Result', 'SchoolElement amount', 'SchoolElement receipts', 'This system amount', 'This system receipts'],
+                    ...d.rows.map((r) => [r.date, r.admissionNo, r.studentName, PARALLEL_LABEL[r.status][0], r.theirs.total, r.theirs.receipts.join(' '), r.ours.total, r.ours.receipts.join(' ')]),
+                  ])
+                }
+              >
+                Download CSV
+              </Button>
+            </span>
+          }
+        >
+          <p className="mb-3 flex flex-wrap gap-2 text-sm">
+            <Badge tone="green">{d.totals.matched} same</Badge>
+            <Badge tone="red">{d.totals.different} different amount</Badge>
+            <Badge tone="amber">{d.totals.onlyTheirs} only in SchoolElement</Badge>
+            <Badge tone="blue">{d.totals.onlyOurs} only here</Badge>
+            {d.totals.theirs === d.totals.ours && d.totals.different + d.totals.onlyTheirs + d.totals.onlyOurs === 0 && <span className="text-green-800">✅ The two systems agree.</span>}
+          </p>
+          {!!d.ignoredColumns.length && <p className="mb-2 text-xs text-muted">Columns not used: {d.ignoredColumns.join(', ')}</p>}
+          {!!d.fileErrors.length && (
+            <p className="mb-2 text-sm text-amber-800">
+              {d.fileErrors.length} row(s) skipped: {d.fileErrors.slice(0, 3).map((e) => `line ${e.line}: ${e.error}`).join('; ')}
+              {d.fileErrors.length > 3 ? '…' : ''}
+            </p>
+          )}
+          <Table
+            rows={rows}
+            rowKey={(r) => `${r.date}|${r.admissionNo}`}
+            empty={onlyDiff ? 'No differences 🎉' : 'Nothing to compare'}
+            columns={[
+              { header: 'Date', cell: (r) => r.date },
+              { header: 'Admission no', cell: (r) => <span className="font-mono text-xs">{r.admissionNo}</span> },
+              { header: 'Student', cell: (r) => r.studentName || '—' },
+              { header: 'Result', cell: (r) => <Badge tone={PARALLEL_LABEL[r.status][1]}>{PARALLEL_LABEL[r.status][0]}</Badge> },
+              { header: 'SchoolElement', cell: (r) => (r.theirs.count ? `${inr(r.theirs.total)} (${r.theirs.count})` : '—'), className: 'text-right' },
+              { header: 'This system', cell: (r) => (r.ours.count ? `${inr(r.ours.total)} (${r.ours.count})` : '—'), className: 'text-right' },
+              { header: 'Receipts here', cell: (r) => <span className="font-mono text-xs">{r.ours.receipts.join(', ') || '—'}</span> },
+            ]}
+          />
+        </Card>
       )}
     </div>
   );

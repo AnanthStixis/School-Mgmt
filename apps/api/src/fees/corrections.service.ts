@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Prisma } from '@prisma/client';
 import {
   allocate,
+  chargesLateFee,
   INSTRUMENT_MODES,
   lateFee,
   type AdjustmentInput,
@@ -40,7 +41,7 @@ const correctionInclude = {
 type CorrectionFull = Prisma.FeeCorrectionGetPayload<{ include: typeof correctionInclude }>;
 
 const assignmentInclude = {
-  feeType: { select: { name: true } },
+  feeType: { select: { name: true, kind: true } },
   invoices: { orderBy: { seq: 'asc' } },
   student: { include: { branch: { select: { tenantId: true, settings: true } } } },
 } satisfies Prisma.FeeAssignmentInclude;
@@ -154,7 +155,7 @@ export class CorrectionsService {
     const reason = this.reason(input.remarks);
     const i = a.invoices.find((x) => x.id === input.invoiceId)!;
     const today = todayIST();
-    const due = lateFee({ balance: balanceOf(i), dueDate: dayString(i.dueDate), fineFrom: i.fineFrom ? dayString(i.fineFrom) : null }, today, lateFeePerDay(a.student.branch.settings));
+    const due = lateFee({ balance: balanceOf(i), dueDate: dayString(i.dueDate), fineFrom: i.fineFrom ? dayString(i.fineFrom) : null }, today, chargesLateFee(a.feeType.kind) ? lateFeePerDay(a.student.branch.settings) : 0);
     if (!due) throw new BadRequestException(`There is no late fee on ${i.label} today`);
 
     const row = await this.prisma.$transaction(async (tx) => {
@@ -256,7 +257,7 @@ export class CorrectionsService {
       include: {
         assignment: {
           select: {
-            feeType: { select: { name: true } },
+            feeType: { select: { name: true, kind: true } },
             student: {
               select: {
                 id: true,
@@ -304,7 +305,7 @@ export class CorrectionsService {
       if (balance > 0) {
         row.balance += balance;
         if (dueDate < today) row.overdue += balance;
-        row.lateFee += lateFee({ balance, dueDate, fineFrom: i.fineFrom ? dayString(i.fineFrom) : null }, today, lateFeePerDay(s.branch.settings));
+        row.lateFee += lateFee({ balance, dueDate, fineFrom: i.fineFrom ? dayString(i.fineFrom) : null }, today, chargesLateFee(i.assignment.feeType.kind) ? lateFeePerDay(s.branch.settings) : 0);
         row.dues.push({ label: `${i.assignment.feeType.name} · ${i.label}`, dueDate, balance });
       }
     }

@@ -158,3 +158,47 @@ export interface CorrectionsReportDto {
   cancellations: (ReceiptListItem & { cancelledAt: string; cancelReason: string | null })[];
   totals: { concession: number; adjustment: number; fineWaiver: number; refund: number; cancelled: number };
 }
+
+// ---------- parallel run (sprint 8) ----------
+
+/** Columns read from SchoolElement's Daily Transaction export (other columns are ignored). */
+export const PARALLEL_RUN_COLUMNS = ['receipt_no', 'paid_date', 'admission_no', 'amount', 'mode', 'student', 'status'] as const;
+export const PARALLEL_RUN_ALIASES: Record<string, string> = {
+  receipt_number: 'receipt_no',
+  receipt: 'receipt_no',
+  date: 'paid_date',
+  payment_date: 'paid_date',
+  transaction_date: 'paid_date',
+  paid_on: 'paid_date',
+  admission_number: 'admission_no',
+  adm_no: 'admission_no',
+  amount_paid: 'amount',
+  paid_amount: 'amount',
+  total: 'amount',
+  total_amount: 'amount',
+  payment_type: 'mode',
+  payment_mode: 'mode',
+  mode_of_payment: 'mode',
+  student_name: 'student',
+};
+
+export type ParallelStatus = 'MATCH' | 'DIFFERENT' | 'ONLY_THEIRS' | 'ONLY_OURS';
+
+export interface ParallelRunRow {
+  date: string;
+  admissionNo: string;
+  studentName: string;
+  status: ParallelStatus;
+  theirs: { count: number; total: number; receipts: string[] };
+  ours: { count: number; total: number; receipts: string[] };
+}
+
+export interface ParallelRunDto {
+  from: string;
+  to: string;
+  /** Differences first, then matches */
+  rows: ParallelRunRow[];
+  totals: { theirs: number; ours: number; matched: number; different: number; onlyTheirs: number; onlyOurs: number };
+  fileErrors: { line: number; error: string }[];
+  ignoredColumns: string[];
+}

@@ -1,0 +1,6 @@
+Admission No,Enrollment No,Student Name,Class/Section,Date of Birth,Gender,Father Name,Father Mobile,Mother Name,Mother Mobile,RTE/NON-RTE,New Admission or Re-Admission,Student Status,Address
+BNMPS25-9001,EN-9001,Rhea Kulkarni,VI-A,12-08-2015,Female,Sameer Kulkarni,8700000101,Pallavi Kulkarni,8700000102,NON-RTE,Re-Admission,Active,"Jayanagar 4th Block, Bangalore"
+BNMPS25-9002,EN-9002,Arnav Bhat,VIII-B,03-01-2013,Male,Ganesh Bhat,8700000103,,,NON-RTE,Re-Admission,Active,"Banashankari II Stage, Bangalore"
+BNMPS25-9003,EN-9003,Sana Sheikh,VII-A,27-11-2014,Female,Imran Sheikh,8700000104,Ayesha Sheikh,8700000105,RTE,Re-Admission,Active,"Kumaraswamy Layout, Bangalore"
+BNMPS25-9004,EN-9004,Vikram Iyer,IX-A,15-05-2012,Male,Raghav Iyer,8700000106,,,NON-RTE,New Admission,Active,"JP Nagar, Bangalore"
+BNMPS25-9005,EN-9005,Tara Kulkarni,VI-B,09-02-2015,Female,Sameer Kulkarni,8700000101,Pallavi Kulkarni,8700000102,NON-RTE,Re-Admission,In-active,"Jayanagar 4th Block, Bangalore"

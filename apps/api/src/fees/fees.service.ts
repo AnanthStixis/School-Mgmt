@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type FeeBand, type FeeRate, type FeeType, type Student } from '@prisma/client';
 import {
+  chargesLateFee,
+  hasRateChart,
   lateFee,
   LATE_FEE_PER_DAY,
   type BranchSettings,
@@ -62,6 +64,7 @@ export function quote(kind: FeeKind, s: { grade: number | null; admissionType: s
     const a = rates.get('*');
     return a === undefined ? { reason: 'No application fee amount set' } : { category: 'Application fee', amount: a };
   }
+  if (kind === 'PREVIOUS') return { reason: 'Previous-year balances are loaded with Import → Previous-year balances' };
   if (kind === 'CUSTOM') {
     if (customAmount === undefined || customAmount <= 0) return { reason: 'Enter the amount for this custom fee' };
     return { category: 'Custom amount', amount: customAmount };
@@ -128,6 +131,7 @@ export class FeesService {
     const b = await this.scope.branch(user, input.branchId);
     const year = await this.scope.year(user, input.academicYearId);
     this.scope.assertYearOpen(year);
+    if (input.kind === 'PREVIOUS') throw new BadRequestException('Previous-year balances are created by Import → Previous-year balances');
     this.checkInstallments(input.installments, year);
     const components = this.checkComponents(input.components, input.name);
     try {
@@ -185,7 +189,7 @@ export class FeesService {
       if (!Number.isInteger(amount) || amount < 0 || amount > MAX_AMOUNT) throw new BadRequestException(`Amount for ${key} must be a whole number of rupees`);
       const [a, b] = key.split('|');
       if (t.kind === 'APPLICATION' && key !== '*') throw new BadRequestException('An application fee has a single amount');
-      if (t.kind === 'CUSTOM') throw new BadRequestException('Custom fees take their amount when assigned');
+      if (!hasRateChart(t.kind)) throw new BadRequestException(t.kind === 'PREVIOUS' ? 'Previous-year balances are imported per student' : 'Custom fees take their amount when assigned');
       if (t.kind === 'SCHOOL' && (!bands.has(a) || !ADMISSION_TYPES.includes(b as never))) throw new BadRequestException(`Unknown band or admission type in "${key}"`);
       if (t.kind === 'TRANSPORT' && (!a?.trim() || !PICKUP_MODES.includes(b as never))) throw new BadRequestException(`Unknown slab or pickup mode in "${key}"`);
     }
@@ -476,7 +480,7 @@ export class FeesService {
     const total = (k: 'billed' | 'paid' | 'balance' | 'overdue') => rows.reduce((n, r) => n + r[k], 0);
     return {
       academicYear: year.label,
-      placeholderRates: types.some((t) => t.kind !== 'CUSTOM' && !t.ratesConfirmed),
+      placeholderRates: types.some((t) => hasRateChart(t.kind) && !t.ratesConfirmed),
       rows,
       totals: { billed: total('billed'), paid: total('paid'), balance: total('balance'), overdue: total('overdue'), unpublished: rows.reduce((n, r) => n + r.assigned - r.published, 0) },
     };
@@ -555,6 +559,7 @@ export class FeesService {
 
   private assignmentDto(a: Prisma.FeeAssignmentGetPayload<{ include: { feeType: { include: { academicYear: { select: { label: true } } } }; invoices: true } }>, perDay: number): FeeAssignmentDto {
     const today = todayIST();
+    if (!chargesLateFee(a.feeType.kind)) perDay = 0;
     const invoices: FeeInvoiceDto[] = a.invoices.map((i) => {
       const balance = i.gross - i.concession - i.adjustment - i.paid;
       return { id: i.id, seq: i.seq, label: i.label, dueDate: dayString(i.dueDate), gross: i.gross, concession: i.concession, adjustment: i.adjustment, paid: i.paid, balance, status: invoiceStatus(i, today), lateFee: lateFee({ balance, dueDate: dayString(i.dueDate), fineFrom: i.fineFrom ? dayString(i.fineFrom) : null }, today, perDay) };

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
+  chargesLateFee,
   INSTRUMENT_MODES,
   lateFee,
   RECON_MODES,
@@ -106,7 +107,7 @@ export class CollectionService {
       .map((i) => {
         const balance = net(i) - i.paid;
         const dueDate = dayString(i.dueDate);
-        const fine = lateFee({ balance, dueDate, fineFrom: fineFromOf(i) }, today, perDay);
+        const fine = lateFee({ balance, dueDate, fineFrom: fineFromOf(i) }, today, chargesLateFee(i.assignment.feeType.kind) ? perDay : 0);
         return {
           invoiceId: i.id,
           feeTypeName: i.assignment.feeType.name,
@@ -117,7 +118,7 @@ export class CollectionService {
           paid: i.paid,
           balance,
           lateFee: fine,
-          daysLate: perDay ? fine / perDay : 0,
+          daysLate: perDay && chargesLateFee(i.assignment.feeType.kind) ? fine / perDay : 0,
         };
       })
       .filter((i) => i.balance > 0);
@@ -170,7 +171,7 @@ export class CollectionService {
       const label = `${inv.assignment.feeType.name} · ${inv.label}`;
       if (!COLLECTABLE.includes(inv.assignment.status)) throw new BadRequestException(`${label} has not been confirmed by Accounts yet`);
       const balance = net(inv) - inv.paid;
-      const due = lateFee({ balance, dueDate: dayString(inv.dueDate), fineFrom: fineFromOf(inv) }, today, perDay);
+      const due = lateFee({ balance, dueDate: dayString(inv.dueDate), fineFrom: fineFromOf(inv) }, today, chargesLateFee(inv.assignment.feeType.kind) ? perDay : 0);
       if (!Number.isInteger(l.fee) || l.fee < 0) throw new BadRequestException(`Enter the amount for ${label} in whole rupees`);
       if (l.fee > balance) throw new BadRequestException(`₹${l.fee} is more than the ₹${balance} left on ${label}`);
       if (l.fine === 'defer' && due > 0 && l.fee === balance) throw new BadRequestException(`${label} is being cleared: collect or waive its ₹${due} late fee`);

@@ -209,6 +209,8 @@ export interface ImportResult {
   /** Only rows with errors in a dry run; empty after a successful import. */
   rows: ImportRowResult[];
   created: number;
+  /** Columns in the file that were not recognised and were left out */
+  ignoredColumns?: string[];
 }
 
 /** Columns of the student import CSV, in template order. */
@@ -231,3 +233,116 @@ export const STUDENT_IMPORT_COLUMNS = [
 ] as const;
 
 export const STAFF_IMPORT_COLUMNS = ['name', 'role', 'subject', 'email', 'phone', 'qualification', 'joined_on', 'access'] as const;
+
+/** Optional fee-profile columns on the student import (SchoolElement exports these). */
+export const STUDENT_PROFILE_COLUMNS = ['admission_type', 'rte', 'section'] as const;
+
+/**
+ * Header names seen in SchoolElement exports (and common spreadsheet variants), mapped to our columns.
+ * Keys are headers normalised by normaliseHeader().
+ */
+export const STUDENT_HEADER_ALIASES: Record<string, string> = {
+  admission_number: 'admission_no',
+  adm_no: 'admission_no',
+  admission: 'admission_no',
+  student_name: 'name',
+  student: 'name',
+  name_of_the_student: 'name',
+  class_section: 'class',
+  class_and_section: 'class',
+  class_sec: 'class',
+  date_of_birth: 'dob',
+  birth_date: 'dob',
+  d_o_b: 'dob',
+  sex: 'gender',
+  roll_number: 'roll_no',
+  roll: 'roll_no',
+  alpha_roll_no: 'roll_no',
+  student_status: 'status',
+  fathers_name: 'guardian_name',
+  father_name: 'guardian_name',
+  parent_name: 'guardian_name',
+  father_mobile: 'guardian_phone',
+  fathers_mobile: 'guardian_phone',
+  father_phone: 'guardian_phone',
+  father_mobile_no: 'guardian_phone',
+  mobile: 'guardian_phone',
+  mobile_no: 'guardian_phone',
+  parent_mobile: 'guardian_phone',
+  phone: 'guardian_phone',
+  father_email: 'guardian_email',
+  parent_email: 'guardian_email',
+  email: 'guardian_email',
+  mothers_name: 'guardian2_name',
+  mother_name: 'guardian2_name',
+  mother_mobile: 'guardian2_phone',
+  mothers_mobile: 'guardian2_phone',
+  mother_phone: 'guardian2_phone',
+  mother_mobile_no: 'guardian2_phone',
+  residential_address: 'address',
+  permanent_address: 'address',
+  rte_non_rte: 'rte',
+  rte_status: 'rte',
+  new_admission_or_re_admission: 'admission_type',
+};
+
+export const BALANCE_IMPORT_COLUMNS = ['admission_no', 'amount', 'year', 'remarks'] as const;
+export const BALANCE_HEADER_ALIASES: Record<string, string> = {
+  admission_number: 'admission_no',
+  adm_no: 'admission_no',
+  previous_balance: 'amount',
+  previous_year_balance: 'amount',
+  balance: 'amount',
+  amount_due: 'amount',
+  outstanding: 'amount',
+  due: 'amount',
+  academic_year: 'year',
+  remark: 'remarks',
+};
+
+/** "Father's Mobile No." → "fathers_mobile_no" */
+export const normaliseHeader = (h: string) =>
+  h
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const ROMAN: Record<string, string> = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6', VII: '7', VIII: '8', IX: '9', X: '10', XI: '11', XII: '12' };
+
+/**
+ * A comparable form of a class name, so "VIII-A", "8 A", "Class 8 / A" and "8th-A" all match "8-A",
+ * and "XI (ISC)" matches "11 ISC".
+ */
+export function normaliseClassName(v: string): string {
+  return v
+    .toUpperCase()
+    .replace(/\b(CLASS|STD|STANDARD|GRADE)\b\.?/g, ' ')
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean)
+    .map((t) => ROMAN[t] ?? t.replace(/^(\d+)(ST|ND|RD|TH)$/, '$1'))
+    .join('-');
+}
+
+/** Accepts 2027-03-31, 31-03-2027, 31/03/2027 and 31-Mar-2027 (Indian day-first order). Returns YYYY-MM-DD or null. */
+export function parseLooseDate(v: string): string | null {
+  const s = v.trim();
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  let y: number, m: number, d: number;
+  let r: RegExpMatchArray | null;
+  if ((r = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) [y, m, d] = [Number(r[1]), Number(r[2]), Number(r[3])];
+  else if ((r = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/))) [d, m, y] = [Number(r[1]), Number(r[2]), Number(r[3])];
+  else if ((r = s.match(/^(\d{1,2})[-\s/]([A-Za-z]{3})[A-Za-z]*[-\s/,]+(\d{4})/))) [d, m, y] = [Number(r[1]), months.indexOf(r[2].toUpperCase()) + 1, Number(r[3])];
+  else return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (!m || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+/** "₹ 1,23,456.00" → 123456; null if not a whole number of rupees. */
+export function parseRupees(v: string): number | null {
+  const s = v.replace(/[₹,\s]|Rs\.?|INR/gi, '');
+  if (!/^\d+(\.0+)?$/.test(s)) return null;
+  return Number(s.split('.')[0]);
+}

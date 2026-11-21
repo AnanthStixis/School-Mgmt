@@ -42,7 +42,7 @@ describe('readRecords', () => {
 });
 
 describe('mapStudentRow', () => {
-  const ctx = (): StudentRowContext => ({ classIdByName: new Map([['8-a', 'class-8a']]), existingAdmissionNos: new Set(['BNMPS26-0001']), seenAdmissionNos: new Set() });
+  const ctx = (): StudentRowContext => ({ classIdByName: new Map([['8-A', 'class-8a']]), existingAdmissionNos: new Set(['BNMPS26-0001']), seenAdmissionNos: new Set() });
   const row = (data: Record<string, string>, line = 2) => ({ line, data: { name: 'Aarav', guardian_name: 'Suresh', guardian_phone: '9876543210', ...data } });
 
   it('maps a valid row', () => {

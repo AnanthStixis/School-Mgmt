@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ADMISSION_TYPES,
+  CREATABLE_FEE_KINDS,
   FEE_KIND_LABEL,
+  hasRateChart,
   PICKUP_MODES,
   gradeLabel,
   rateKey,
@@ -166,6 +168,7 @@ function AssignPublish({ branchId }: { branchId: string }) {
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.studentId));
   const toggle = (id: string) => setSelected((s) => (s.has(id) ? new Set([...s].filter((x) => x !== id)) : new Set([...s, id])));
   const isCustom = b?.feeType.kind === 'CUSTOM';
+  const isPrevious = b?.feeType.kind === 'PREVIOUS';
   const ACTIONS: [FeeAction, string, 'primary' | 'default' | 'danger'][] = [
     ['assign', 'Assign', 'primary'],
     ['confirm', 'Confirm', 'default'],
@@ -179,7 +182,7 @@ function AssignPublish({ branchId }: { branchId: string }) {
 
   return (
     <div className="space-y-4">
-      {types.some((t) => t.kind !== 'CUSTOM' && !t.ratesConfirmed) && <PlaceholderBanner />}
+      {types.some((t) => hasRateChart(t.kind) && !t.ratesConfirmed) && <PlaceholderBanner />}
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Fee type" className="min-w-[14rem]">
@@ -188,6 +191,7 @@ function AssignPublish({ branchId }: { branchId: string }) {
           <Field label="Class" className="min-w-[10rem]">
             <Select value={classId} onChange={(e) => setClassId(e.target.value)} options={(classes.data ?? []).map((c): [string, string] => [c.id, c.name])} />
           </Field>
+          {isPrevious && <p className="text-sm text-muted">Previous-year balances are loaded with Import → Previous-year balances; here you can confirm, publish and switch on online payment.</p>}
           {isCustom && (
             <Field label="Amount per student (₹, for Assign)">
               <Input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} className="max-w-[10rem]" />
@@ -384,7 +388,7 @@ function FeeTypeCard({ t, bands, years }: { t: FeeTypeDto; bands: FeeBandDto[]; 
     <Card
       title={
         <span className="flex flex-wrap items-center gap-2">
-          {t.name} <Badge>{t.kind}</Badge> {t.kind !== 'CUSTOM' && (t.ratesConfirmed ? <Badge tone="green">Amounts confirmed</Badge> : <Badge tone="amber">Placeholder amounts</Badge>)}
+          {t.name} <Badge>{t.kind}</Badge> {hasRateChart(t.kind) && (t.ratesConfirmed ? <Badge tone="green">Amounts confirmed</Badge> : <Badge tone="amber">Placeholder amounts</Badge>)}
           <span className="text-xs font-normal text-muted">{t.assignedCount} students assigned</span>
         </span>
       }
@@ -474,8 +478,9 @@ function FeeTypeCard({ t, bands, years }: { t: FeeTypeDto; bands: FeeBandDto[]; 
       )}
       {t.kind === 'APPLICATION' && <Field label="Amount for every applicant (₹)">{cell('*')}</Field>}
       {t.kind === 'CUSTOM' && <p className="text-sm text-muted">Custom fees take their amount when you assign them (Assign & publish).</p>}
+      {t.kind === 'PREVIOUS' && <p className="text-sm text-muted">Balances from earlier years, loaded per student with Import → Previous-year balances. No late fee is charged on them.</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-        {t.kind !== 'CUSTOM' && (
+        {hasRateChart(t.kind) && (
           <>
             <Button variant="primary" disabled={saveRates.isPending} onClick={() => saveRates.mutate()}>
               {saveRates.isPending ? 'Saving…' : 'Save amounts'}
@@ -504,7 +509,7 @@ function NewFeeType({ branchId, academicYearId, yearLabel, startsOn, onClose }: 
   const qc = useQueryClient();
   const yy = `${yearLabel.slice(2, 4)}-${yearLabel.slice(5, 7)}`;
   const y0 = Number(startsOn.slice(0, 4));
-  const PRESETS: Record<FeeKind, { name: string; inst: FeeInstallmentDto[] }> = {
+  const PRESETS: Record<Exclude<FeeKind, 'PREVIOUS'>, { name: string; inst: FeeInstallmentDto[] }> = {
     SCHOOL: { name: `School Fees ${yy}`, inst: ['04-05', '07-05', '10-05', '01-05'].map((md, i) => ({ seq: i + 1, label: `Installment ${i + 1}`, dueDate: `${md.startsWith('01') ? y0 + 1 : y0}-${md}` })) },
     TRANSPORT: { name: `Transportation Fees ${yy}`, inst: ['04-05', '10-05'].map((md, i) => ({ seq: i + 1, label: `Transport Inst ${i + 1}`, dueDate: `${y0}-${md}` })) },
     APPLICATION: { name: `Application Fee ${yy}`, inst: [{ seq: 1, label: 'Application Fee', dueDate: `${y0}-04-05` }] },
@@ -537,12 +542,12 @@ function NewFeeType({ branchId, academicYearId, yearLabel, startsOn, onClose }: 
           <Select
             value={kind}
             onChange={(e) => {
-              const k = e.target.value as FeeKind;
+              const k = e.target.value as Exclude<FeeKind, 'PREVIOUS'>;
               setKind(k);
               setName(PRESETS[k].name);
               setInst(PRESETS[k].inst);
             }}
-            options={(Object.keys(FEE_KIND_LABEL) as FeeKind[]).map((k): [string, string] => [k, FEE_KIND_LABEL[k]])}
+            options={CREATABLE_FEE_KINDS.map((k): [string, string] => [k, FEE_KIND_LABEL[k]])}
           />
         </Field>
         <Field label="Name">

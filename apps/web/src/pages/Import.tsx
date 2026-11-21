@@ -1,26 +1,29 @@
 import { useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { STAFF_IMPORT_COLUMNS, STUDENT_IMPORT_COLUMNS, type ImportResult } from '@sms/shared';
+import { BALANCE_IMPORT_COLUMNS, STAFF_IMPORT_COLUMNS, STUDENT_IMPORT_COLUMNS, STUDENT_PROFILE_COLUMNS, type ImportResult } from '@sms/shared';
 import { api, saveText } from '../lib/api';
 import { NeedsBranch } from '../components/BranchPicker';
 import { useScope } from '../lib/scope';
 import { Badge, Button, Card, ErrorBox, PageHeader, Table } from '../components/ui';
 
-type Kind = 'students' | 'staff';
+type Kind = 'students' | 'staff' | 'balances';
+const TITLE: Record<Kind, string> = { students: 'Import students', staff: 'Import staff', balances: 'Import previous-year balances' };
+const BACK: Record<Kind, string> = { students: '/students', staff: '/staff', balances: '/fees?tab=reports' };
+const NOUN: Record<Kind, string> = { students: 'students', staff: 'staff', balances: 'balances' };
 const MAX_BYTES = 5 * 1024 * 1024;
 
 /** Bulk import with a mandatory check first: nothing is saved until every row is valid. */
 export function Import() {
   const { kind } = useParams();
-  if (kind !== 'students' && kind !== 'staff') return <Navigate to="/students" replace />;
+  if (kind !== 'students' && kind !== 'staff' && kind !== 'balances') return <Navigate to="/students" replace />;
   return (
     <div>
       <PageHeader
-        title={kind === 'students' ? 'Import students' : 'Import staff'}
+        title={TITLE[kind]}
         sub="Upload a CSV file. We check every row first and import nothing until all rows are valid."
         actions={
-          <Link to={`/${kind}`}>
+          <Link to={BACK[kind]}>
             <Button>‹ Back</Button>
           </Link>
         }
@@ -37,7 +40,7 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
   const [fileError, setFileError] = useState<string | null>(null);
   const [check, setCheck] = useState<ImportResult | null>(null);
   const [done, setDone] = useState<ImportResult | null>(null);
-  const columns = kind === 'students' ? STUDENT_IMPORT_COLUMNS : STAFF_IMPORT_COLUMNS;
+  const columns: readonly string[] = kind === 'students' ? [...STUDENT_IMPORT_COLUMNS, ...STUDENT_PROFILE_COLUMNS] : kind === 'staff' ? STAFF_IMPORT_COLUMNS : BALANCE_IMPORT_COLUMNS;
 
   const template = useMutation({ mutationFn: () => api.importTemplate(kind), onSuccess: (t) => saveText(`${kind}-template.csv`, t) });
   const validate = useMutation({ mutationFn: (text: string) => api.importCsv(kind, branchId, text, true), onSuccess: setCheck });
@@ -48,6 +51,7 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
       else {
         setDone(r);
         void qc.invalidateQueries({ queryKey: [kind] });
+        void qc.invalidateQueries({ queryKey: ['fee-reports'] });
         void qc.invalidateQueries({ queryKey: ['classes'] });
       }
     },
@@ -70,11 +74,12 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
     return (
       <Card>
         <p className="text-lg">
-          ✅ Imported <b>{done.created}</b> {kind} into {branchName(branchId)}.
+          ✅ Imported <b>{done.created}</b> {NOUN[kind]} into {branchName(branchId)}.
         </p>
+        {kind === 'balances' && <p className="mt-2 text-sm text-muted">Each is a confirmed “Previous year balance” fee on the student, ready to collect at the counter. Publish it under Assign &amp; publish to show it to parents.</p>}
         <div className="mt-3 flex gap-2">
-          <Link to={`/${kind}`}>
-            <Button variant="primary">View {kind}</Button>
+          <Link to={BACK[kind]}>
+            <Button variant="primary">{kind === 'balances' ? 'Back to fees' : `View ${kind}`}</Button>
           </Link>
           <Button onClick={() => onFile(undefined)}>Import another file</Button>
         </div>
@@ -86,7 +91,7 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
     <div className="space-y-4">
       <Card title="1. Get the template">
         <p className="mb-2 text-sm">
-          Fill in one row per {kind === 'students' ? 'student' : 'staff member'}. Columns: <span className="font-mono text-xs">{columns.join(', ')}</span>
+          Fill in one row per {kind === 'students' ? 'student' : kind === 'staff' ? 'staff member' : 'student who owes money from an earlier year'}. Columns: <span className="font-mono text-xs">{columns.join(', ')}</span>
         </p>
         <ul className="mb-3 list-disc pl-5 text-sm text-muted">
           {kind === 'students' ? (
@@ -94,6 +99,15 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
               <li>Required: name, guardian_name, guardian_phone. Leave admission_no blank to have one generated.</li>
               <li>class must match a class name in Academic Setup exactly, e.g. 8-A. Dates as YYYY-MM-DD or DD-MM-YYYY.</li>
               <li>Students whose guardian mobile is already on file are linked to that parent as siblings.</li>
+              <li>
+                A SchoolElement student export works as it is: its column names (Admission No, Student Name, Class/Section such as VIII-A, Father Name, Father Mobile, Mother Name, RTE/NON-RTE…) are recognised, and columns we don’t use are listed and left out.
+              </li>
+            </>
+          ) : kind === 'balances' ? (
+            <>
+              <li>Required: admission_no and amount (whole rupees; “₹ 12,500” is fine). year defaults to the previous academic year.</li>
+              <li>SchoolElement’s Previous Balance report columns (Admission No, Previous Balance) are recognised.</li>
+              <li>No late fee is charged on these balances. A student can have only one imported balance per year.</li>
             </>
           ) : (
             <>
@@ -124,6 +138,7 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
             <Badge tone="green">{check.valid} ready</Badge>
             {check.invalid > 0 && <Badge tone="red">{check.invalid} with problems</Badge>}
           </div>
+          {!!check.ignoredColumns?.length && <p className="mb-3 text-sm text-amber-800">Columns not used and left out: {check.ignoredColumns.join(', ')}</p>}
           {check.invalid > 0 ? (
             <>
               <p className="mb-2 text-sm">Fix these rows in your file and upload it again. Nothing has been imported.</p>
@@ -132,7 +147,7 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
                 rowKey={(r) => String(r.line)}
                 columns={[
                   { header: 'Line', cell: (r) => r.line },
-                  { header: 'Name', cell: (r) => r.data.name || <span className="text-muted">(blank)</span> },
+                  { header: kind === 'balances' ? 'Admission no' : 'Name', cell: (r) => (kind === 'balances' ? r.data.admission_no : r.data.name) || <span className="text-muted">(blank)</span> },
                   {
                     header: 'Problems',
                     cell: (r) => (
@@ -150,7 +165,7 @@ function ImportFlow({ kind, branchId }: { kind: Kind; branchId: string }) {
             <>
               <p className="mb-3 text-sm">All rows look good.</p>
               <Button variant="primary" disabled={commit.isPending} onClick={() => commit.mutate()}>
-                {commit.isPending ? 'Importing…' : `Import ${check.valid} ${kind}`}
+                {commit.isPending ? 'Importing…' : `Import ${check.valid} ${NOUN[kind]}`}
               </Button>
             </>
           )}

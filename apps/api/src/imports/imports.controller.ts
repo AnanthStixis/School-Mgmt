@@ -1,6 +1,14 @@
 import { BadRequestException, Body, Controller, Get, Header, HttpException, Post } from '@nestjs/common';
 import {
+  ADMISSION_TYPES,
+  BALANCE_HEADER_ALIASES,
+  BALANCE_IMPORT_COLUMNS,
   GUARDIAN_RELATIONS,
+  normaliseClassName,
+  parseLooseDate,
+  parseRupees,
+  STUDENT_HEADER_ALIASES,
+  STUDENT_PROFILE_COLUMNS,
   STAFF_ACCESS,
   STAFF_IMPORT_COLUMNS,
   STUDENT_IMPORT_COLUMNS,
@@ -45,6 +53,13 @@ const tryDate = (v: string, label: string, errors: string[]) => {
   }
 };
 
+const STUDENT_COLUMNS = [...STUDENT_IMPORT_COLUMNS, ...STUDENT_PROFILE_COLUMNS];
+
+export interface StudentProfile {
+  admissionType?: string;
+  rte?: boolean;
+}
+
 export interface StudentRowContext {
   classIdByName: Map<string, string>;
   existingAdmissionNos: Set<string>;
@@ -52,7 +67,7 @@ export interface StudentRowContext {
 }
 
 /** Validates one student CSV row and maps it to the create input. Pure, so it is unit-tested. */
-export function mapStudentRow(r: CsvRecord, branchId: string, ctx: StudentRowContext): { input: StudentInput; errors: string[] } {
+export function mapStudentRow(r: CsvRecord, branchId: string, ctx: StudentRowContext): { input: StudentInput; profile: StudentProfile; errors: string[] } {
   const d = r.data;
   const errors: string[] = [];
   if (!d.name) errors.push('name is required');
@@ -70,14 +85,17 @@ export function mapStudentRow(r: CsvRecord, branchId: string, ctx: StudentRowCon
 
   let classId: string | null = null;
   if (d.class) {
-    classId = ctx.classIdByName.get(d.class.trim().toLowerCase()) ?? null;
-    if (!classId) errors.push(`class "${d.class}" not found in this branch for the current year`);
+    // SchoolElement may give "VIII-A" in one column, or class and section separately.
+    const wanted = d.section ? `${d.class} ${d.section}` : d.class;
+    classId = ctx.classIdByName.get(normaliseClassName(wanted)) ?? null;
+    if (!classId) errors.push(`class "${wanted}" not found in this branch for the current year`);
   }
 
   const roll = d.roll_no ? Number(d.roll_no) : null;
   if (d.roll_no && (!Number.isInteger(roll) || roll! < 1)) errors.push(`roll_no "${d.roll_no}" must be a whole number`);
 
-  const status = (d.status || 'Active') as StudentStatus;
+  // SchoolElement marks students Active / In-active.
+  const status = (/^in-?active$/i.test(d.status ?? '') ? 'Left' : d.status || 'Active') as StudentStatus;
   const statusMatch = STUDENT_STATUSES.find((s) => s.toLowerCase() === status.toLowerCase());
   if (!statusMatch) errors.push(`status "${d.status}" must be one of ${STUDENT_STATUSES.join(', ')}`);
 
@@ -101,10 +119,29 @@ export function mapStudentRow(r: CsvRecord, branchId: string, ctx: StudentRowCon
     errors.push('guardian_phone and guardian2_phone are the same number');
   }
 
-  const dob = d.dob ? tryDate(d.dob, 'dob', errors) : null;
+  let dob: string | null = null;
+  if (d.dob) {
+    dob = parseLooseDate(d.dob);
+    if (!dob) errors.push(`dob "${d.dob}" is not a valid date (use YYYY-MM-DD or DD-MM-YYYY)`);
+  }
+
+  const profile: StudentProfile = {};
+  if (d.admission_type) {
+    const t = d.admission_type.toLowerCase().replace(/[^a-z]/g, '');
+    const match = ADMISSION_TYPES.find((a) => a.toLowerCase().replace(/[^a-z]/g, '') === t) ?? (t.startsWith('new') ? 'New Admission' : t.startsWith('re') ? 'Re-admission' : undefined);
+    if (!match) errors.push(`admission_type "${d.admission_type}" must be one of ${ADMISSION_TYPES.join(', ')}`);
+    else profile.admissionType = match;
+  }
+  if (d.rte) {
+    const v = d.rte.trim().toLowerCase();
+    if (['rte', 'yes', 'y', 'true', '1'].includes(v)) profile.rte = true;
+    else if (['non-rte', 'nonrte', 'non rte', 'no', 'n', 'false', '0'].includes(v)) profile.rte = false;
+    else errors.push(`rte "${d.rte}" must be RTE or NON-RTE`);
+  }
 
   return {
     errors,
+    profile,
     input: {
       branchId,
       admissionNo: adm,
@@ -178,21 +215,24 @@ export class ImportsController {
   async importStudents(@CurrentUser() user: AuthUser, @Body() dto: ImportDto): Promise<ImportResult> {
     const b = await this.scope.branch(user, dto.branchId);
     const year = await this.scope.year(user);
-    const { records, headerErrors } = readRecords(dto.csv, STUDENT_IMPORT_COLUMNS, ['name', 'guardian_name', 'guardian_phone']);
+    const { records, headerErrors, ignored } = readRecords(dto.csv, STUDENT_COLUMNS, ['name', 'guardian_name', 'guardian_phone'], { aliases: STUDENT_HEADER_ALIASES, ignoreUnknown: true });
     this.assertFile(headerErrors, records.length);
 
     const classes = await this.prisma.schoolClass.findMany({ where: { branchId: b.id, academicYearId: year.id }, select: { id: true, name: true } });
     const existing = await this.prisma.student.findMany({ where: { branchId: b.id }, select: { admissionNo: true } });
     const ctx: StudentRowContext = {
-      classIdByName: new Map(classes.map((c) => [c.name.toLowerCase(), c.id])),
+      classIdByName: new Map(classes.map((c) => [normaliseClassName(c.name), c.id])),
       existingAdmissionNos: new Set(existing.map((e) => e.admissionNo.toUpperCase())),
       seenAdmissionNos: new Set(),
     };
     const mapped = records.map((r) => ({ r, ...mapStudentRow(r, b.id, ctx) }));
-    const result = this.summarise(mapped, dto.dryRun !== false);
+    const result = { ...this.summarise(mapped, dto.dryRun !== false), ignoredColumns: ignored };
     if (result.dryRun || result.invalid) return result;
 
-    await this.commit(mapped, (row, tx) => this.students.create(user, row.input, tx, { audit: false }));
+    await this.commit(mapped, async (row, tx) => {
+      const created = await this.students.create(user, row.input, tx, { audit: false });
+      if (row.profile.admissionType || row.profile.rte !== undefined) await tx.student.update({ where: { id: created.id }, data: row.profile });
+    });
     await this.audit.record({ tenantId: b.tenantId, actorId: user.id, action: 'student.import', entity: 'Student', data: { branch: b.code, created: mapped.length } });
     return { ...result, created: mapped.length };
   }
@@ -218,6 +258,81 @@ export class ImportsController {
 
     await this.commit(mapped, (row, tx) => this.staff.create(user, row.input, tx, { audit: false }));
     await this.audit.record({ tenantId: b.tenantId, actorId: user.id, action: 'staff.import', entity: 'Staff', data: { branch: b.code, created: mapped.length } });
+    return { ...result, created: mapped.length };
+  }
+
+  @Get('balances/template')
+  @RequireModule('fees')
+  @Roles('manager', 'accounts')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="previous-balances-template.csv"')
+  balanceTemplate(): string {
+    return [toCsvLine([...BALANCE_IMPORT_COLUMNS]), toCsvLine(['BNMPS26-0001', '12500', '2025-26', 'Term 3 unpaid'])].join('\r\n') + '\r\n';
+  }
+
+  /**
+   * Unpaid balances from earlier years (from SchoolElement's Previous Balance report). Each becomes a
+   * "Previous year balance" fee on the student, confirmed and ready to collect, with no late fee.
+   */
+  @Post('balances')
+  @RequireModule('fees')
+  @Roles('manager', 'accounts')
+  async importBalances(@CurrentUser() user: AuthUser, @Body() dto: ImportDto): Promise<ImportResult> {
+    const b = await this.scope.branch(user, dto.branchId);
+    const year = await this.scope.year(user);
+    this.scope.assertYearOpen(year);
+    const { records, headerErrors, ignored } = readRecords(dto.csv, BALANCE_IMPORT_COLUMNS, ['admission_no', 'amount'], { aliases: BALANCE_HEADER_ALIASES, ignoreUnknown: true });
+    this.assertFile(headerErrors, records.length);
+
+    const prevLabel = previousYearLabel(year.label);
+    const students = await this.prisma.student.findMany({ where: { branchId: b.id }, select: { id: true, admissionNo: true, name: true } });
+    const byAdm = new Map(students.map((s) => [s.admissionNo.toUpperCase(), s]));
+    const existingType = await this.prisma.feeType.findFirst({ where: { branchId: b.id, academicYearId: year.id, kind: 'PREVIOUS' }, include: { assignments: { select: { studentId: true } } } });
+    const already = new Set(existingType?.assignments.map((a) => a.studentId) ?? []);
+    const seen = new Set<string>();
+    const mapped = records.map((r) => {
+      const d = r.data;
+      const errors: string[] = [];
+      const s = byAdm.get((d.admission_no ?? '').toUpperCase());
+      if (!d.admission_no) errors.push('admission_no is required');
+      else if (!s) errors.push(`no student with admission_no ${d.admission_no} in ${b.name}`);
+      else {
+        if (seen.has(s.id)) errors.push(`admission_no ${d.admission_no} appears more than once in the file`);
+        if (already.has(s.id)) errors.push(`${s.name} already has a previous-year balance imported`);
+        seen.add(s.id);
+      }
+      const amount = parseRupees(d.amount ?? '');
+      if (amount === null || amount <= 0) errors.push(`amount "${d.amount}" must be a whole number of rupees above 0`);
+      const fromYear = d.year || prevLabel;
+      if (!/^\d{4}-\d{2}$/.test(fromYear)) errors.push(`year "${d.year}" must look like ${prevLabel}`);
+      return { r, errors, studentId: s?.id ?? '', amount: amount ?? 0, fromYear, remarks: d.remarks || null };
+    });
+    const result = { ...this.summarise(mapped, dto.dryRun !== false), ignoredColumns: ignored };
+    if (result.dryRun || result.invalid) return result;
+
+    // One "Previous year balance" fee type per branch and year, due on the first installment date (5 April).
+    const due = new Date(year.startsOn.getTime() + 4 * 86_400_000);
+    const type =
+      existingType ??
+      (await this.prisma.feeType.create({
+        data: { branchId: b.id, academicYearId: year.id, kind: 'PREVIOUS', name: 'Previous year balance', ratesConfirmed: true, installments: { create: [{ seq: 1, label: 'Previous year balance', dueDate: due }] } },
+      }));
+    await this.commit(mapped, (row, tx) =>
+      tx.feeAssignment.create({
+        data: {
+          studentId: row.studentId,
+          feeTypeId: type.id,
+          category: `Balance from ${row.fromYear}${row.remarks ? ` · ${row.remarks}` : ''}`.slice(0, 190),
+          gross: row.amount,
+          status: 'CONFIRMED',
+          confirmedAt: new Date(),
+          createdById: user.id,
+          invoices: { create: [{ studentId: row.studentId, seq: 1, label: 'Previous year balance', dueDate: due, gross: row.amount }] },
+        },
+      }),
+    );
+    const total = mapped.reduce((n, m) => n + m.amount, 0);
+    await this.audit.record({ tenantId: b.tenantId, actorId: user.id, action: 'fee.balances_import', entity: 'FeeType', entityId: type.id, data: { branch: b.code, students: mapped.length, total } });
     return { ...result, created: mapped.length };
   }
 
@@ -249,3 +364,9 @@ export class ImportsController {
     );
   }
 }
+
+/** "2026-27" → "2025-26" */
+export const previousYearLabel = (label: string) => {
+  const y = Number(label.slice(0, 4)) - 1;
+  return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
+};

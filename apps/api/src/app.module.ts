@@ -9,6 +9,7 @@ import { AuditModule } from './audit/audit.service';
 import { CollectionController } from './fees/collection.controller';
 import { CorrectionsController } from './fees/corrections.controller';
 import { CorrectionsService } from './fees/corrections.service';
+import { ParallelRunService } from './fees/parallel-run';
 import { NotificationsService } from './notifications/notifications.service';
 import { DevGateway, PAYMENT_GATEWAY } from './payments/gateway';
 import { PaymentsController } from './payments/payments.controller';
@@ -52,6 +53,7 @@ import { StudentLoginsController, StudentLoginsService } from './students/studen
   providers: [StaffService, StudentsService, StudentLoginsService, AdmissionsService, AttendanceService, FeesService,
     CollectionService,
     CorrectionsService,
+    ParallelRunService,
     NotificationsService,
     PaymentsService,
     {
