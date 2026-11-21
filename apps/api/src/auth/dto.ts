@@ -1,5 +1,5 @@
 import { IsEmail, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
-import type { LoginRequest, OtpRequest, OtpVerifyRequest } from '@sms/shared';
+import type { LoginRequest, OtpRequest, OtpVerifyRequest, StudentLoginRequest } from '@sms/shared';
 
 export class LoginDto implements LoginRequest {
   @IsEmail()
@@ -24,6 +24,16 @@ export class OtpVerifyDto implements OtpVerifyRequest {
 
   @Matches(/^\d{6}$/, { message: 'code must be 6 digits' })
   code!: string;
+}
+
+export class StudentLoginDto implements StudentLoginRequest {
+  @IsString()
+  @Length(1, 40)
+  loginId!: string;
+
+  @IsString()
+  @Length(1, 200)
+  password!: string;
 }
 
 export class RefreshDto {

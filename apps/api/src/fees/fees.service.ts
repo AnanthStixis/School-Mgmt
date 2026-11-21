@@ -1,6 +1,9 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type FeeBand, type FeeRate, type FeeType, type Student } from '@prisma/client';
 import {
+  lateFee,
+  LATE_FEE_PER_DAY,
+  type BranchSettings,
   ADMISSION_TYPES,
   PICKUP_MODES,
   rateKey,
@@ -33,6 +36,9 @@ type Tx = Prisma.TransactionClient;
 type TypeFull = FeeType & { installments: { seq: number; label: string; dueDate: Date }[]; rates: FeeRate[]; academicYear: { label: string }; _count?: { assignments: number } };
 const typeInclude = { installments: { orderBy: { seq: 'asc' as const } }, rates: true, academicYear: { select: { label: true } }, _count: { select: { assignments: true } } };
 const MAX_AMOUNT = 10_000_000;
+
+/** The branch's late fee per day (₹), falling back to the school-wide default. */
+export const lateFeePerDay = (settings: Prisma.JsonValue | null): number => (settings as BranchSettings | null)?.lateFeePerDay ?? LATE_FEE_PER_DAY;
 
 /** Splits an annual amount equally across installments; the last one takes the rounding. */
 export function splitEqually(total: number, n: number): number[] {
@@ -392,7 +398,7 @@ export class FeesService {
   // ================= student accounts =================
 
   async studentFees(user: AuthUser, studentId: string, academicYearId?: string): Promise<StudentFeesDto> {
-    const s = await this.prisma.student.findUnique({ where: { id: studentId }, include: { class: true, guardians: { select: { userId: true } } } });
+    const s = await this.prisma.student.findUnique({ where: { id: studentId }, include: { class: true, branch: { select: { settings: true } }, guardians: { select: { userId: true } } } });
     const notFound = new NotFoundException('Student not found');
     if (!s) throw notFound;
     const parentView = user.role === 'parent';
@@ -408,7 +414,8 @@ export class FeesService {
       include: { feeType: { include: { academicYear: { select: { label: true } } } }, invoices: { orderBy: { seq: 'asc' } } },
       orderBy: [{ feeType: { academicYear: { startsOn: 'desc' } } }, { createdAt: 'asc' }],
     });
-    const dtos = assignments.map((a) => this.assignmentDto(a));
+    const perDay = lateFeePerDay(s.branch.settings);
+    const dtos = assignments.map((a) => this.assignmentDto(a, perDay));
     const sum = (k: 'gross' | 'paid' | 'balance' | 'overdue') => dtos.reduce((n, a) => n + a.totals[k], 0);
     return {
       studentId,
@@ -546,11 +553,11 @@ export class FeesService {
     };
   }
 
-  private assignmentDto(a: Prisma.FeeAssignmentGetPayload<{ include: { feeType: { include: { academicYear: { select: { label: true } } } }; invoices: true } }>): FeeAssignmentDto {
+  private assignmentDto(a: Prisma.FeeAssignmentGetPayload<{ include: { feeType: { include: { academicYear: { select: { label: true } } } }; invoices: true } }>, perDay: number): FeeAssignmentDto {
     const today = todayIST();
     const invoices: FeeInvoiceDto[] = a.invoices.map((i) => {
       const balance = i.gross - i.concession - i.adjustment - i.paid;
-      return { id: i.id, seq: i.seq, label: i.label, dueDate: dayString(i.dueDate), gross: i.gross, concession: i.concession, adjustment: i.adjustment, paid: i.paid, balance, status: invoiceStatus(i, today) };
+      return { id: i.id, seq: i.seq, label: i.label, dueDate: dayString(i.dueDate), gross: i.gross, concession: i.concession, adjustment: i.adjustment, paid: i.paid, balance, status: invoiceStatus(i, today), lateFee: lateFee({ balance, dueDate: dayString(i.dueDate), fineFrom: i.fineFrom ? dayString(i.fineFrom) : null }, today, perDay) };
     });
     const sum = (f: (i: FeeInvoiceDto) => number) => invoices.reduce((n, i) => n + f(i), 0);
     return {

@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } 
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { User } from '@prisma/client';
-import type { AuthResponse, SessionUser } from '@sms/shared';
+import { LOGIN_LOCK_MINUTES, LOGIN_MAX_FAILURES, type AuthResponse, type SessionUser } from '@sms/shared';
 import * as bcrypt from 'bcryptjs';
 import { createHash, createHmac, randomBytes, randomInt } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
@@ -56,6 +56,25 @@ export class AuthService {
 
   async login(email: string, password: string, client: ClientInfo): Promise<IssuedSession> {
     const user = await this.prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    // Students sign in with their login ID, not an e-mail.
+    return this.checkPassword(user?.role === 'student' ? null : user, password, client, 'Invalid e-mail or password', 'password');
+  }
+
+  // ---------- student sign-in (login ID + password set by a parent or the school) ----------
+
+  async studentLogin(loginId: string, password: string, client: ClientInfo): Promise<IssuedSession> {
+    const user = await this.prisma.user.findUnique({ where: { username: loginId.trim().toUpperCase() } });
+    return this.checkPassword(user?.role === 'student' ? user : null, password, client, 'Invalid login ID or password', 'student_password');
+  }
+
+  /**
+   * Shared password check. Unknown accounts cost the same bcrypt time as real ones, and an account
+   * is locked for a while after repeated wrong passwords (counted from the audit trail).
+   */
+  private async checkPassword(user: User | null, password: string, client: ClientInfo, failMessage: string, method: string): Promise<IssuedSession> {
+    if (user && (await this.recentFailures(user)) >= LOGIN_MAX_FAILURES) {
+      throw new HttpException(`Too many wrong attempts. Try again in ${LOGIN_LOCK_MINUTES} minutes.`, HttpStatus.TOO_MANY_REQUESTS);
+    }
     const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !user.passwordHash || !ok || !user.active) {
       await this.audit.record({
@@ -64,15 +83,22 @@ export class AuthService {
         action: 'auth.login_failed',
         entity: 'User',
         entityId: user?.id,
-        data: { method: 'password' },
+        data: { method },
         ip: client.ip,
       });
-      throw new UnauthorizedException('Invalid e-mail or password');
+      throw new UnauthorizedException(failMessage);
     }
     return this.startSession(user, 'password', client);
   }
 
-  // ---------- OTP sign-in (parents, students) ----------
+  /** Wrong passwords in the lock window, ignoring any before the last successful sign-in. */
+  private recentFailures(user: User): Promise<number> {
+    const windowStart = new Date(Date.now() - LOGIN_LOCK_MINUTES * 60_000);
+    const since = user.lastLoginAt && user.lastLoginAt > windowStart ? user.lastLoginAt : windowStart;
+    return this.prisma.auditLog.count({ where: { entity: 'User', entityId: user.id, action: 'auth.login_failed', at: { gt: since } } });
+  }
+
+  // ---------- OTP sign-in (parents, and staff without a password) ----------
 
   /**
    * Sends a code if the number belongs to an active user. Always answers the same way,
@@ -93,7 +119,8 @@ export class AuthService {
     await this.prisma.otpCode.create({
       data: { phone, codeHash: this.hashOtp(phone, code), expiresAt: new Date(Date.now() + OTP_TTL_SECONDS * 1000) },
     });
-    if (user?.active) {
+    // Students sign in with their login ID and password, never by mobile code.
+    if (user?.active && user.role !== 'student') {
       await this.sms.send(phone, `${code} is your BNM School sign-in code. It expires in 5 minutes. Do not share it.`);
     }
   }
@@ -115,7 +142,7 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { phone } });
-    if (!user || !user.active) throw invalid;
+    if (!user || !user.active || user.role === 'student') throw invalid;
 
     // Single use: consume atomically so two parallel requests cannot both succeed.
     const { count } = await this.prisma.otpCode.updateMany({ where: { id: otp.id, consumedAt: null }, data: { consumedAt: new Date() } });

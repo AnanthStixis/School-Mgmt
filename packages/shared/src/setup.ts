@@ -10,6 +10,8 @@ export interface BranchSettings {
   termsPerYear?: number;
   /** Students below this attendance % are flagged. */
   attendanceThreshold?: number;
+  /** Late fee in ₹ per day on an overdue installment (default LATE_FEE_PER_DAY). */
+  lateFeePerDay?: number;
 }
 
 export interface BranchDetailDto {

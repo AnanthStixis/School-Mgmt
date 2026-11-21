@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
 import { StudentAttendance } from './Attendance';
 import { StudentFees } from './Fees';
+import { StudentLoginPanel } from '../components/StudentLogin';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, PageHeader, Pager, Select, Table, statusTone } from '../components/ui';
 
 const PAGE_SIZE = 25;
@@ -172,6 +173,7 @@ export function StudentDetail() {
           <StudentAttendance studentId={s.id} compact />
         </Card>
       </div>}
+      {user?.role === 'manager' && <StudentLoginCard studentId={s.id} />}
       {showFees && (
         <div className="mt-4">
           <Card title="Fees" actions={<Link to="/fees" className="text-sm">Fees & Invoices →</Link>}>
@@ -181,6 +183,18 @@ export function StudentDetail() {
       )}
       <p className="mt-4 text-sm text-muted">Marks for this student appear here when the exams module is built.</p>
       {editing && <StudentForm student={s} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />}
+    </div>
+  );
+}
+
+/** School office view of the student's sign-in (parents manage it from their own dashboard too). */
+function StudentLoginCard({ studentId }: { studentId: string }) {
+  const q = useQuery({ queryKey: ['student-login', studentId], queryFn: () => api.studentLoginStatus(studentId) });
+  return (
+    <div className="mt-4">
+      <Card title="Student sign-in">
+        {q.isLoading ? <Loading /> : q.error || !q.data ? <ErrorBox error={q.error} /> : <StudentLoginPanel status={q.data} />}
+      </Card>
     </div>
   );
 }

@@ -15,10 +15,10 @@ export function Layout() {
   let lastGroup = '';
 
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[252px_1fr]">
+    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[252px_1fr] print:block">
       {menuOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMenuOpen(false)} />}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-auto bg-side text-side-ink transition-transform md:sticky md:top-0 md:h-screen md:w-auto md:translate-x-0 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`print:hidden fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-auto bg-side text-side-ink transition-transform md:sticky md:top-0 md:h-screen md:w-auto md:translate-x-0 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
         aria-label="Main menu"
       >
         <div className="p-4">
@@ -49,7 +49,7 @@ export function Layout() {
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-20 flex h-15 items-center gap-3 border-b border-line bg-white px-4 md:px-6">
+        <header className="print:hidden sticky top-0 z-20 flex h-15 items-center gap-3 border-b border-line bg-white px-4 md:px-6">
           <button onClick={() => setMenuOpen(true)} aria-label="Open menu" className="rounded-lg border border-line px-2.5 py-1.5 md:hidden">
             ☰
           </button>
@@ -64,7 +64,7 @@ export function Layout() {
             Sign out
           </button>
         </header>
-        <main className="p-4 md:p-6">
+        <main className="p-4 md:p-6 print:p-0">
           <Outlet />
         </main>
       </div>

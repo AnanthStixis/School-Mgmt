@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BranchDetailDto, BranchInput } from '@sms/shared';
+import { LATE_FEE_PER_DAY, type BranchDetailDto, type BranchInput } from '@sms/shared';
 import { api } from '../lib/api';
 import { useScope } from '../lib/scope';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, PageHeader } from '../components/ui';
@@ -48,6 +48,8 @@ export function Branches() {
               <dd>{b.settings.startsAt && b.settings.endsAt ? `${b.settings.startsAt} – ${b.settings.endsAt}` : '—'}</dd>
               <dt className="text-muted">Attendance alert below</dt>
               <dd>{b.settings.attendanceThreshold != null ? `${b.settings.attendanceThreshold}%` : '—'}</dd>
+              <dt className="text-muted">Late fee</dt>
+              <dd>₹{b.settings.lateFeePerDay ?? LATE_FEE_PER_DAY} per day</dd>
             </dl>
             <div className="mt-3 flex gap-4 border-t border-line pt-3 text-sm">
               <span>
@@ -84,6 +86,7 @@ function BranchForm({ branch, onClose }: { branch: BranchDetailDto | null; onClo
     startsAt: branch?.settings.startsAt ?? '08:30',
     endsAt: branch?.settings.endsAt ?? '15:30',
     attendanceThreshold: String(branch?.settings.attendanceThreshold ?? 75),
+    lateFeePerDay: String(branch?.settings.lateFeePerDay ?? LATE_FEE_PER_DAY),
   });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
 
@@ -99,7 +102,7 @@ function BranchForm({ branch, onClose }: { branch: BranchDetailDto | null; onClo
         phone: f.phone || null,
         email: f.email || null,
         active: f.active,
-        settings: { workingDays: f.workingDays, startsAt: f.startsAt, endsAt: f.endsAt, attendanceThreshold: Number(f.attendanceThreshold) },
+        settings: { workingDays: f.workingDays, startsAt: f.startsAt, endsAt: f.endsAt, attendanceThreshold: Number(f.attendanceThreshold), lateFeePerDay: Number(f.lateFeePerDay) },
       };
       if (branch) {
         const { code: _code, ...rest } = body;
@@ -159,6 +162,9 @@ function BranchForm({ branch, onClose }: { branch: BranchDetailDto | null; onClo
         </Field>
         <Field label="Attendance alert below (%)">
           <Input type="number" min={0} max={100} value={f.attendanceThreshold} onChange={set('attendanceThreshold')} />
+        </Field>
+        <Field label="Late fee (₹ per day overdue)">
+          <Input type="number" min={0} max={1000} value={f.lateFeePerDay} onChange={set('lateFeePerDay')} />
         </Field>
         <Field label="Brand colour">
           <Input type="color" value={f.color} onChange={set('color')} className="h-10 p-1" />

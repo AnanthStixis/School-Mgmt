@@ -1,4 +1,4 @@
-/** Fees contracts — sprint 4: fee setup, assignment and publishing. Collection comes in sprint 5. */
+/** Fees contracts — sprint 4: fee setup, assignment and publishing. Collection is in collection.ts. */
 
 export const FEE_KINDS = ['SCHOOL', 'TRANSPORT', 'APPLICATION', 'CUSTOM'] as const;
 export type FeeKind = (typeof FEE_KINDS)[number];
@@ -91,6 +91,8 @@ export interface FeeInvoiceDto {
   /** gross − concession − adjustment − paid */
   balance: number;
   status: InvoiceStatus;
+  /** Late fee owed today (₹/day after the due date while unpaid) */
+  lateFee: number;
 }
 
 export interface FeeAssignmentDto {

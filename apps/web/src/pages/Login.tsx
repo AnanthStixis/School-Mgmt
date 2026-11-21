@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 
-type Mode = 'staff' | 'family';
+type Mode = 'staff' | 'parent' | 'student';
 
 const input = 'w-full rounded-lg border border-line bg-white px-3 py-2.5 outline-none focus:border-brand';
 const label = 'mb-1 block text-xs font-semibold text-muted';
@@ -13,6 +13,7 @@ export function Login() {
   const [mode, setMode] = useState<Mode>('staff');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
@@ -40,7 +41,12 @@ export function Login() {
     void run(() => auth.loginWithPassword(email, password));
   };
 
-  const submitFamily = (e: FormEvent) => {
+  const submitStudent = (e: FormEvent) => {
+    e.preventDefault();
+    void run(() => auth.loginAsStudent(loginId, password));
+  };
+
+  const submitParent = (e: FormEvent) => {
     e.preventDefault();
     if (!codeSent) {
       void run(async () => {
@@ -55,6 +61,7 @@ export function Login() {
 
   const switchMode = (m: Mode) => {
     setMode(m);
+    setPassword('');
     setError(null);
     setInfo(null);
   };
@@ -65,11 +72,12 @@ export function Login() {
         <img src="/bnm-logo.png" alt="BNM Public School" className="mb-6 w-full" />
         <h1 className="mb-4 text-2xl font-bold">Sign in</h1>
 
-        <div className="mb-5 grid grid-cols-2 rounded-lg border border-line bg-bg p-1" role="tablist">
+        <div className="mb-5 grid grid-cols-3 rounded-lg border border-line bg-bg p-1" role="tablist">
           {(
             [
               ['staff', 'Staff'],
-              ['family', 'Parent / Student'],
+              ['parent', 'Parent'],
+              ['student', 'Student'],
             ] as const
           ).map(([m, l]) => (
             <button
@@ -110,8 +118,44 @@ export function Login() {
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+        ) : mode === 'student' ? (
+          <form onSubmit={submitStudent} className="space-y-4">
+            <div>
+              <label className={label} htmlFor="loginId">
+                Login ID (your admission number)
+              </label>
+              <input
+                id="loginId"
+                autoComplete="username"
+                autoCapitalize="characters"
+                placeholder="BNMPS26-0001"
+                required
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
+                className={`${input} font-mono uppercase`}
+              />
+            </div>
+            <div>
+              <label className={label} htmlFor="spassword">
+                Password
+              </label>
+              <input
+                id="spassword"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={input}
+              />
+            </div>
+            <button disabled={busy} className={primary}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </button>
+            <p className="text-sm text-muted">No password yet, or forgot it? Ask your parent to set one from their sign-in, or ask the school office.</p>
+          </form>
         ) : (
-          <form onSubmit={submitFamily} className="space-y-4">
+          <form onSubmit={submitParent} className="space-y-4">
             <div>
               <label className={label} htmlFor="phone">
                 Mobile number registered with the school

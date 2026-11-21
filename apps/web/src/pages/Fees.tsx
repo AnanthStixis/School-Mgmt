@@ -16,7 +16,9 @@ import {
   type InvoiceStatus,
   type StudentFeesDto,
 } from '@sms/shared';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { CollectPanel, ReceiptRegister, StudentReceipts } from './Collection';
 import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
 import { NeedsBranch } from '../components/BranchPicker';
@@ -32,14 +34,17 @@ export function Fees() {
   return <StaffFees />;
 }
 
-type Tab = 'overview' | 'assign' | 'setup';
+type Tab = 'collect' | 'receipts' | 'overview' | 'assign' | 'setup';
 function StaffFees() {
-  const [tab, setTab] = useState<Tab>('overview');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'collect');
   return (
     <div>
-      <PageHeader title="Fees & Invoices" sub="Fee chart, invoices and publishing. Fee collection and receipts arrive in the next sprint." />
+      <PageHeader title="Fees & Invoices" sub="Counter collection and receipts, the fee chart, invoices and publishing." />
       <Tabs
         items={[
+          ['collect', 'Collect'],
+          ['receipts', 'Receipts'],
           ['overview', 'Overview'],
           ['assign', 'Assign & publish'],
           ['setup', 'Fee setup'],
@@ -47,6 +52,8 @@ function StaffFees() {
         value={tab}
         onChange={setTab}
       />
+      {tab === 'collect' && <CollectPanel initialStudentId={params.get('student') ?? undefined} />}
+      {tab === 'receipts' && <ReceiptRegister />}
       {tab === 'overview' && <Overview onSetup={() => setTab('setup')} />}
       {tab === 'assign' && <NeedsBranch>{(b) => <AssignPublish key={b} branchId={b} />}</NeedsBranch>}
       {tab === 'setup' && <NeedsBranch>{(b) => <FeeSetup key={b} branchId={b} />}</NeedsBranch>}
@@ -575,6 +582,9 @@ export function StudentFees({ studentId, staff }: { studentId: string; staff?: b
         {f.totals.overdue > 0 && <Badge tone="red">Overdue {inr(f.totals.overdue)}</Badge>}
         {staff && (
           <>
+            <Link to={`/fees?tab=collect&student=${f.studentId}`} className="ml-1 text-sm font-semibold">
+              Collect fee →
+            </Link>
             <span className="ml-2 text-xs text-muted">
               {f.profile.admissionType}
               {f.profile.transportSlab ? ` · 🚌 ${f.profile.transportSlab} (${f.profile.pickupMode})` : ' · no transport'}
@@ -591,6 +601,7 @@ export function StudentFees({ studentId, staff }: { studentId: string; staff?: b
       {f.assignments.map((a) => (
         <AssignmentTable key={a.id} a={a} staff={staff} />
       ))}
+      <StudentReceipts studentId={f.studentId} />
       {editing && <FeeProfileForm f={f} onClose={() => setEditing(false)} />}
     </div>
   );
@@ -615,6 +626,7 @@ function AssignmentTable({ a, staff }: { a: FeeAssignmentDto; staff?: boolean })
           { header: 'Concession', cell: (i) => (i.concession ? inr(i.concession) : '—'), className: 'text-right' },
           { header: 'Paid', cell: (i) => (i.paid ? inr(i.paid) : '—'), className: 'text-right' },
           { header: 'Balance', cell: (i) => inr(Math.max(0, i.balance)), className: 'text-right' },
+          { header: 'Late fee', cell: (i) => (i.lateFee ? <span className="text-red-700">{inr(i.lateFee)}</span> : '—'), className: 'text-right' },
           { header: 'Status', cell: (i) => <Badge tone={STATUS_TONE[i.status as InvoiceStatus]}>{i.status}</Badge> },
         ]}
       />
@@ -673,7 +685,7 @@ function FamilyFees() {
   const kid = useMemo(() => kids.data?.[idx], [kids.data, idx]);
   return (
     <div>
-      <PageHeader title="Fees" sub="Published fees and installments. Online payment and receipts arrive soon." />
+      <PageHeader title="Fees" sub="Published fees, installments and receipts. Pay at the school office; online payment is coming soon." />
       {kids.data && kids.data.length > 1 && (
         <div className="mb-4 inline-flex overflow-hidden rounded-lg border border-line">
           {kids.data.map((k, i) => (

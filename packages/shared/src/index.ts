@@ -5,3 +5,4 @@ export * from './setup';
 export * from './admissions';
 export * from './attendance';
 export * from './fees';
+export * from './collection';

@@ -34,6 +34,7 @@ class BranchSettingsDto implements BranchSettings {
   @IsOptional() @Matches(/^\d{2}:\d{2}$/) endsAt?: string;
   @IsOptional() @IsInt() @Min(1) @Max(4) termsPerYear?: number;
   @IsOptional() @IsInt() @Min(0) @Max(100) attendanceThreshold?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(1000) lateFeePerDay?: number;
 }
 
 class BranchUpdateDto {

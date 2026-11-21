@@ -9,6 +9,7 @@ interface Auth {
   status: Status;
   user: SessionUser | null;
   loginWithPassword: (email: string, password: string) => Promise<void>;
+  loginAsStudent: (loginId: string, password: string) => Promise<void>;
   requestOtp: (phone: string) => Promise<void>;
   verifyOtp: (phone: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -34,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     status,
     user,
     loginWithPassword: async (email, password) => setSession(await api.login(email, password)),
+    loginAsStudent: async (loginId, password) => setSession(await api.studentLogin(loginId, password)),
     requestOtp: async (phone) => {
       await api.requestOtp(phone);
     },

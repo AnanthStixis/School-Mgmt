@@ -5,7 +5,7 @@ import type { CookieOptions, Request, Response } from 'express';
 import type { AuthUser } from './auth-user';
 import { AuthService, REFRESH_TTL_DAYS, type ClientInfo, type IssuedSession } from './auth.service';
 import { CurrentUser, Public } from './decorators';
-import { LoginDto, OtpRequestDto, OtpVerifyDto, RefreshDto } from './dto';
+import { LoginDto, OtpRequestDto, OtpVerifyDto, RefreshDto, StudentLoginDto } from './dto';
 
 export const REFRESH_COOKIE = 'sms_rt';
 
@@ -30,6 +30,14 @@ export class AuthController {
   @HttpCode(200)
   async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponse> {
     return this.respond(await this.auth.login(dto.email, dto.password, clientInfo(req)), req, res);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('student-login')
+  @HttpCode(200)
+  async studentLogin(@Body() dto: StudentLoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponse> {
+    return this.respond(await this.auth.studentLogin(dto.loginId, dto.password, clientInfo(req)), req, res);
   }
 
   @Public()

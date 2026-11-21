@@ -42,8 +42,8 @@ const email = (name: string) => name.toLowerCase().replace(/[^a-z]+/g, '.').repl
 async function main() {
   const tenant = await prisma.tenant.upsert({
     where: { id: 'tenant-bnm' },
-    update: {},
-    create: { id: 'tenant-bnm', name: 'BNM Public School', trust: 'Bhageerathi Bai Narayan Rao Maanay Educational Institutions', city: 'Bangalore' },
+    update: { receiptPrefix: 'BNMPS' },
+    create: { id: 'tenant-bnm', receiptPrefix: 'BNMPS', name: 'BNM Public School', trust: 'Bhageerathi Bai Narayan Rao Maanay Educational Institutions', city: 'Bangalore' },
   });
 
   const branches = [
@@ -66,8 +66,9 @@ async function main() {
   });
 
   // ---------- personas ----------
-  // Staff sign in with SEED_PASSWORD (local dev only). Parent and student sign in by OTP on test numbers;
-  // in development the code is printed in the API log instead of being sent by SMS.
+  // Staff sign in with SEED_PASSWORD (local dev only). The parent signs in by OTP on a test number
+  // (in development the code is printed in the API log instead of being sent by SMS). The student
+  // signs in with their admission number and SEED_PASSWORD (set below, once the student exists).
   const seedPassword = process.env.SEED_PASSWORD;
   if (!seedPassword) console.warn('SEED_PASSWORD is not set: staff accounts will have no password');
   const passwordHash = seedPassword ? await bcrypt.hash(seedPassword, 12) : null;
@@ -79,7 +80,7 @@ async function main() {
     { key: 'teacher', role: 'teacher', name: 'Priya Sharma', title: 'Mathematics • Class Teacher 8-A', email: 'priya.sharma@bnmpschool.in', branch: 'BNMPS', phone: '+919800000011' },
     { key: 'accounts', role: 'accounts', name: 'Kavitha Raman', title: 'Accounts Officer – BNM Public School', email: 'kavitha@bnmpschool.in', branch: 'BNMPS', phone: '+919800000012' },
     { key: 'parent', role: 'parent', name: 'Suresh Menon', title: 'Parent of Aarav (8-A) & Diya (6-B)', email: 'suresh.menon@mail.com', branch: 'BNMPS', phone: '+919800000001' },
-    { key: 'student', role: 'student', name: 'Aarav Menon', title: 'Class 8-A • Roll 1', email: 'aarav.menon@students.bnmpschool.in', branch: 'BNMPS', phone: '+919800000002' },
+    { key: 'student', role: 'student', name: 'Aarav Menon', title: 'Class 8-A • Roll 1', email: 'aarav.menon@students.bnmpschool.in', branch: 'BNMPS' },
   ];
   const uid: Record<string, string> = {};
   for (const u of personas) {
@@ -183,6 +184,7 @@ async function main() {
           userId: studentUserId,
         };
         const st = await prisma.student.upsert({ where: { branchId_admissionNo: { branchId, admissionNo } }, update: data, create: { branchId, admissionNo, ...data } });
+        if (studentUserId) await prisma.user.update({ where: { id: studentUserId }, data: { username: admissionNo.toUpperCase(), passwordHash } });
         studentCount++;
 
         // Father is the primary guardian; about half the students also have the mother on record.
@@ -353,7 +355,86 @@ async function main() {
     }
   }
 
-  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days, ${feeAssignments} new fee assignments`);
+  // ---------- past payments ----------
+  // Most families paid the April and July installments (some a little late, with the ₹25/day late fee),
+  // so balances and receipts look like a school mid-year. Aarav and Diya leave October unpaid to show a late fee.
+  // Runs only once: skipped when the school already has receipts.
+  let receiptCount = 0;
+  if (!(await prisma.feeReceipt.count({ where: { tenantId: tenant.id } }))) {
+    const LATE_PER_DAY = 25;
+    const MODES: [string, number][] = [['UPI', 45], ['Cash', 15], ['Net Banking', 15], ['Cheque', 12], ['Credit Card', 6], ['Debit Card', 5], ['DD', 2]];
+    const wmode = () => {
+      let r = rnd() * 100;
+      for (const [m, w] of MODES) if ((r -= w) < 0) return m;
+      return 'UPI';
+    };
+    const BANKS = ['SBI', 'Canara Bank', 'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Karnataka Bank'];
+    const dayMs = 86_400_000;
+    const invoices = await prisma.feeInvoice.findMany({
+      where: { dueDate: { lt: new Date('2026-08-01') }, assignment: { status: 'PUBLISHED', feeType: { academicYearId: year.id } } },
+      include: { assignment: { include: { feeType: true, student: { select: { id: true, name: true, branchId: true } } } } },
+      orderBy: [{ dueDate: 'asc' }, { studentId: 'asc' }, { seq: 'asc' }],
+    });
+    // One receipt per student per due date (school + transport paid together).
+    const groups = new Map<string, typeof invoices>();
+    for (const inv of invoices) {
+      const k = `${inv.studentId}|${inv.dueDate.toISOString()}`;
+      groups.set(k, [...(groups.get(k) ?? []), inv]);
+    }
+    const planned: { date: Date; invs: typeof invoices; late: number }[] = [];
+    for (const invs of groups.values()) {
+      const july = invs[0].dueDate.getUTCMonth() === 6;
+      const demo = ['Aarav Menon', 'Diya Menon'].includes(invs[0].assignment.student.name);
+      const skip = rnd() > (july ? 0.86 : 0.93); // a few families still owe
+      if (skip && !demo) continue;
+      const late = rnd() < 0.15 && !demo ? ri(1, 20) : 0;
+      planned.push({ date: new Date(invs[0].dueDate.getTime() + (late ? late : -ri(0, 10)) * dayMs), invs, late });
+    }
+    planned.sort((a, b) => a.date.getTime() - b.date.getTime());
+    const accountant = await prisma.user.findUniqueOrThrow({ where: { id: uid.accounts } });
+    for (const p of planned) {
+      receiptCount++;
+      const mode = wmode();
+      const lines = p.invs.map((inv) => ({ invoiceId: inv.id, label: `${inv.assignment.feeType.name} · ${inv.label}`, fee: inv.gross, fine: p.late * LATE_PER_DAY }));
+      const fee = lines.reduce((n, l) => n + l.fee, 0);
+      const fine = lines.reduce((n, l) => n + l.fine, 0);
+      const instrument = mode === 'Cheque' || mode === 'DD';
+      await prisma.feeReceipt.create({
+        data: {
+          tenantId: tenant.id,
+          branchId: p.invs[0].assignment.student.branchId,
+          studentId: p.invs[0].studentId,
+          academicYearId: year.id,
+          no: `BNMPS/${year.label}/${pad(receiptCount, 4)}`,
+          date: p.date,
+          mode,
+          source: 'Counter',
+          feeTotal: fee,
+          fineTotal: fine,
+          total: fee + fine,
+          bank: instrument ? pick(BANKS) : null,
+          instrumentNo: instrument ? String(ri(100000, 999999)) : null,
+          instrumentDate: instrument ? new Date(p.date.getTime() - ri(0, 3) * dayMs) : null,
+          reference: ['UPI', 'Net Banking'].includes(mode) ? `UTR${ri(100000000, 999999999)}` : null,
+          recon: ['Cheque', 'Net Banking'].includes(mode) ? 'DONE' : 'NA',
+          createdById: accountant.id,
+          createdByName: accountant.name,
+          createdAt: new Date(p.date.getTime() + 5 * 3_600_000),
+          lines: { create: lines },
+        },
+      });
+      for (const l of lines) {
+        await prisma.feeInvoice.update({ where: { id: l.invoiceId }, data: { paid: l.fee, finePaid: l.fine, fineFrom: l.fine ? p.date : null } });
+      }
+    }
+    await prisma.receiptSequence.upsert({
+      where: { tenantId_yearLabel: { tenantId: tenant.id, yearLabel: year.label } },
+      create: { tenantId: tenant.id, yearLabel: year.label, last: receiptCount },
+      update: { last: receiptCount },
+    });
+  }
+
+  console.log(`Seeded ${tenant.name}: ${branches.length} branches, ${personas.length} personas, ${classCount} classes, ${staffCount} staff, ${studentCount} students, ${kids.length} enquiries, ${recs} new attendance marks over ${days.length} days, ${feeAssignments} new fee assignments, ${receiptCount} past receipts`);
 }
 
 main()

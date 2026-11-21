@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { StudentLoginPanel } from '../components/StudentLogin';
+import { Card } from '../components/ui';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -13,6 +15,8 @@ export function Dashboard() {
         <h1 className="text-2xl font-bold">Welcome, {user?.name.split(' ').slice(-2, -1)[0] ?? user?.name} 👋</h1>
         <p className="text-muted">{user?.title}</p>
       </div>
+
+      {user?.role === 'parent' && <ChildrenSignIn />}
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-card border border-line bg-card p-4">
@@ -47,5 +51,23 @@ export function Dashboard() {
         </section>
       </div>
     </div>
+  );
+}
+
+/** Parents set up and control their children's own sign-in (students have no mobile number of their own). */
+function ChildrenSignIn() {
+  const q = useQuery({ queryKey: ['my-student-logins'], queryFn: api.myStudentLogins });
+  if (!q.data?.length) return null;
+  return (
+    <Card title="Your children's sign-in">
+      <p className="mb-3 text-sm text-muted">Children sign in on the Student tab with their login ID and a password you choose here. You can change it or turn it off at any time.</p>
+      <div className="divide-y divide-line">
+        {q.data.map((s) => (
+          <div key={s.studentId} className="py-3 first:pt-0 last:pb-0">
+            <StudentLoginPanel status={s} showName />
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

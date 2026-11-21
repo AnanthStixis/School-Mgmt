@@ -42,6 +42,32 @@ export interface OtpVerifyRequest {
   code: string;
 }
 
+/** Students sign in with their login ID (the admission number) and a password set by a parent or the school. */
+export interface StudentLoginRequest {
+  loginId: string;
+  password: string;
+}
+
+export const STUDENT_PASSWORD_MIN = 8;
+/** After this many wrong passwords the account is locked for LOGIN_LOCK_MINUTES. */
+export const LOGIN_MAX_FAILURES = 5;
+export const LOGIN_LOCK_MINUTES = 15;
+
+/** A student's sign-in, as shown to their parent or the school office. */
+export interface StudentLoginStatus {
+  studentId: string;
+  studentName: string;
+  className: string | null;
+  /** The ID the student types to sign in; null until a password has been set once. */
+  loginId: string | null;
+  enabled: boolean;
+  lastLoginAt: string | null;
+}
+
+export interface SetStudentPasswordRequest {
+  password: string;
+}
+
 export interface AuthResponse {
   accessToken: string;
   /** Seconds until the access token expires. */

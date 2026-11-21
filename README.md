@@ -72,7 +72,7 @@ You should see `"status":"ok"` and `"db":"up"`.
 
 Then open http://localhost:5174 and sign in:
 
-| Who | Staff tab (e-mail + your `SEED_PASSWORD`) | Or Parent / Student tab (mobile + code) |
+| Who | Staff tab (e-mail + your `SEED_PASSWORD`) | Or Parent tab (mobile + code) |
 |---|---|---|
 | School Admin / Group Director (all branches) | `director@bnmpschool.in` | `98000 00013` |
 | Branch Manager (BNM Public School) | `anitha@bnmpschool.in` | `98000 00010` |
@@ -80,19 +80,20 @@ Then open http://localhost:5174 and sign in:
 | Accounts | `kavitha@bnmpschool.in` | `98000 00012` |
 | Platform Admin (Stixis) | `meera@stixis.io` | — |
 | Parent of Aarav & Diya | — | `98000 00001` |
-| Student (Aarav) | — | `98000 00002` |
+| Student (Aarav) | Student tab: login ID `BNMPS26-0033` + your `SEED_PASSWORD` | — |
 
 No SMS provider is set up yet, so the 6-digit code is printed in the window running `corepack pnpm dev`, in a line starting `[SMS (dev)]`.
 
 What to look for:
 - The dashboard shows **API: ok** and **Database: up**.
+- **Student sign-in**: students don't sign in by mobile (most have no phone of their own, and under the DPDP Act they're children, so the parent stays in control). The parent's dashboard lists each child with **Set up sign-in / Change password / Turn off**; the student then uses the **Student** tab with their admission number as login ID. A manager can do the same from the student's profile. Saving a new password signs the student out everywhere else, and 5 wrong passwords lock an account for 15 minutes.
 - The Group Director (School Admin) sees 3 branches and a branch switcher in the top bar; everyone else sees only their own branch.
 - **Branches & Config**: the School Admin can add and edit branches; a branch manager can only view their own.
 - **Academic Setup**: add classes by grade range and sections, set class teachers and rooms, manage subjects.
 - **Staff**: add staff and give them a login (teacher, accounts; manager only by the School Admin).
 - **Students**: search by name, admission number or parent mobile; open a profile to see guardians, siblings and attendance; add or edit students; import a CSV from **Import CSV**.
 - **Admissions** (managers): the enquiry board; open an enquiry to add notes and follow-ups, move it to Admitted, then **Enrol student**.
-- **Fees & Invoices** (accounts `98000 00012` or managers): **Overview** of billed/overdue per fee type; **Assign & publish** to take a class through Assign → Confirm → Publish → Enable online; **Fee setup** to edit class bands and the fee chart. The parent sees published fees under **Fees**, and a student's profile shows their fee account.
+- **Fees & Invoices** (accounts `98000 00012` or managers): **Collect** to take a payment at the counter (search the student, tick installments, pay in full or in part, collect / waive / leave the late fee, choose the mode) and print the receipt; **Receipts** for the day's (or any range's) register with totals by mode; **Overview** of billed/overdue per fee type; **Assign & publish** to take a class through Assign → Confirm → Publish → Enable online; **Fee setup** to edit class bands and the fee chart. The parent sees published fees under **Fees**, and a student's profile shows their fee account.
 - **Attendance**: sign in as the teacher (`98000 00011`) and mark 8-A for today. Absent students' parents get an SMS, shown in the API log as `[SMS (dev)]`. Managers also see an **Overview** tab; the parent (`98000 00001`) sees each child's calendar.
 - Each role's sidebar matches the POC. Opening a module the role can't use shows **Access restricted**.
 - Reloading the page keeps you signed in, and **Sign out** returns you to the sign-in page.
@@ -150,6 +151,7 @@ Get-NetTCPConnection -LocalPort 3000,5174 -State Listen | ForEach-Object { Stop-
 - **Admissions (sprint 3)**: enquiries for this or next year move Enquiry → Applied → Test/Interview → Admitted, or are dropped with a reason (and can be re-opened). Each has a timeline of stage changes and notes, follow-up dates, and a duplicate warning (same parent mobile and child name). Enrolling creates the student in one transaction, linking siblings by parent mobile. Fee invoices on enrolment come with the fees module.
 - **Attendance (sprint 3)**: daily register per class (Present / Absent / Leave). Class teachers mark their own class today or up to 2 days back; managers any class and date in the open year. Future dates, non-working days and locked years are refused. On today's register, each absent student's primary guardian gets one SMS (never repeated for the same day). Managers get class-wise trends and an at-risk list using each branch's attendance threshold; parents and students see a calendar.
 - **Fees setup (sprint 4)**: per branch and academic year, fee types like the existing system's blueprints: School (priced by class band × admission type), Transport (distance slab × pickup mode), Application (flat) and Custom (amount set when assigning). Installments split the amount equally (last one takes the rounding); due dates and components are configurable, and installments lock once any student has the fee. Amounts are **placeholders** until the school confirms its fee chart (flagged in the UI). A fee type can be copied to another year.
-- **Invoices (sprint 4)**: Assign → Confirm → Publish (parents can see it) → Online payment enabled, in bulk per class, with a reason for every skipped student. Changing the chart never alters invoices already assigned. Students carry a fee profile (admission type, RTE, staff child, transport slab and pickup). Enrolling a child from Admissions assigns the school fee (and the application fee) for accounts to review. Collection, receipts and late fees come in sprint 5.
+- **Invoices (sprint 4)**: Assign → Confirm → Publish (parents can see it) → Online payment enabled, in bulk per class, with a reason for every skipped student. Changing the chart never alters invoices already assigned. Students carry a fee profile (admission type, RTE, staff child, transport slab and pickup). Enrolling a child from Admissions assigns the school fee (and the application fee) for accounts to review. 
+- **Collection (sprint 5)**: counter payments with part payment of an installment. Late fee is ₹25 per day after the due date (set per branch under Branches) while anything is unpaid; at the counter it is collected, waived with a reason, or left running (it can't be left when the installment is being cleared). Modes: Cash, Cheque, DD, Net Banking, UPI, Credit / Debit Card; cheque and DD need bank, number and date (no post-dated or stale cheques). Receipts are numbered `BNMPS/2026-27/0001` in one school-wide series per year and print with the amount in words. Cheque and net-banking receipts wait for **Money received** or **Bounced** (which cancels the receipt). A receipt can be cancelled with a reason, newest first per installment, which reverses exactly what it applied; cancelled receipts stay in the register. Parents see their children's receipts under **Fees**. The seed adds about 300 past receipts (most April and July installments paid, a few late); Aarav and Diya leave October unpaid to show a late fee.
 - **Notifications**: every outgoing SMS is recorded (queued / sent / failed) so a real provider can be plugged in later.
 - The web app has a real sign-in page, a role-based sidebar (a slide-in menu on phones), a branch switcher for the School Admin, and an "Access restricted" screen for modules a role can't open. Modules not built yet show a placeholder.

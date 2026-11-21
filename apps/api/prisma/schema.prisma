@@ -21,12 +21,14 @@ enum Role {
 }
 
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  trust     String?
-  plan      String   @default("Growth")
-  city      String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  name          String
+  trust         String?
+  plan          String   @default("Growth")
+  city          String?
+  /// Receipt numbers are <prefix>/<academic year>/<nnnn>, one series for the whole school per year.
+  receiptPrefix String   @default("RCPT")
+  createdAt     DateTime @default(now())
 
   branches      Branch[]
   users         User[]
@@ -64,6 +66,7 @@ model Branch {
   enquiries Enquiry[]
   feeTypes  FeeType[]
   feeBands  FeeBand[]
+  receipts  FeeReceipt[]
 
   @@unique([tenantId, code])
 }
@@ -80,7 +83,10 @@ model User {
   email        String?   @unique
   /// E.164 (+91…). Used for OTP sign-in (parents, students, and staff without a password).
   phone        String?   @unique
-  /// Staff sign in with a password; parents/students may have none (OTP only).
+  /// Student login ID (their admission number, upper-case). Students have no phone of their own,
+  /// so they sign in with this and a password their parent or the school sets.
+  username     String?   @unique
+  /// Staff and students sign in with a password; parents have none (OTP only).
   passwordHash String?
   active       Boolean   @default(true)
   lastLoginAt  DateTime?
@@ -137,6 +143,7 @@ model AcademicYear {
   classes   SchoolClass[]
   enquiries Enquiry[]
   feeTypes  FeeType[]
+  receipts  FeeReceipt[]
 
   @@unique([tenantId, label])
 }
@@ -222,6 +229,7 @@ model Student {
   attendance     AttendanceRecord[]
   enquiry        Enquiry?
   feeAssignments FeeAssignment[]
+  feeReceipts    FeeReceipt[]
 
   @@unique([branchId, admissionNo])
 }
@@ -473,21 +481,97 @@ model FeeAssignment {
 }
 
 /// One installment a student owes. Amounts in whole rupees.
-/// Payments, concessions, adjustments and fines are filled in by later sprints.
+/// Late fee accrues per day on an unpaid balance from max(dueDate, fineFrom) until it is paid or waived.
 model FeeInvoice {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   assignmentId String
   studentId    String
   seq          Int
   label        String
-  dueDate      DateTime @db.Date
+  dueDate      DateTime  @db.Date
   gross        Int
-  concession   Int      @default(0)
-  adjustment   Int      @default(0)
-  paid         Int      @default(0)
+  concession   Int       @default(0)
+  adjustment   Int       @default(0)
+  paid         Int       @default(0)
+  finePaid     Int       @default(0)
+  fineWaived   Int       @default(0)
+  /// Set when the late fee so far is settled (paid or waived); it restarts from this day.
+  fineFrom     DateTime? @db.Date
 
-  assignment FeeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignment FeeAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  lines      FeeReceiptLine[]
 
   @@unique([assignmentId, seq])
   @@index([studentId])
+}
+
+/// A payment receipt (counter or, later, online). Numbers never repeat; a cancelled receipt stays for audit.
+model FeeReceipt {
+  id             String    @id @default(cuid())
+  tenantId       String
+  branchId       String
+  studentId      String
+  academicYearId String
+  /// e.g. BNMPS/2026-27/0042
+  no             String
+  date           DateTime  @db.Date
+  /// Cash, Cheque, DD, Net Banking, UPI, Credit Card, Debit Card
+  mode           String
+  /// Counter or Online
+  source         String    @default("Counter")
+  /// SUCCESS or CANCELLED
+  status         String    @default("SUCCESS")
+  feeTotal       Int
+  fineTotal      Int
+  total          Int
+  bank           String?
+  instrumentNo   String?
+  instrumentDate DateTime? @db.Date
+  /// UTR / transaction reference for electronic modes
+  reference      String?
+  remarks        String?
+  /// NA, PENDING (cheque / net banking until the bank confirms), DONE, FAILED
+  recon          String    @default("NA")
+  createdById    String
+  createdByName  String
+  createdAt      DateTime  @default(now())
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancelReason   String?
+
+  student      Student          @relation(fields: [studentId], references: [id])
+  branch       Branch           @relation(fields: [branchId], references: [id])
+  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id])
+  lines        FeeReceiptLine[]
+
+  @@unique([tenantId, no])
+  @@index([branchId, date])
+  @@index([studentId])
+}
+
+model FeeReceiptLine {
+  id           String    @id @default(cuid())
+  receiptId    String
+  invoiceId    String
+  /// "School Fee 2026-27 · Installment 3"
+  label        String
+  fee          Int
+  fine         Int       @default(0)
+  fineWaived   Int       @default(0)
+  /// The invoice's fineFrom before this receipt, restored if the receipt is cancelled
+  prevFineFrom DateTime? @db.Date
+
+  receipt FeeReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}
+
+/// Last receipt number used per school and academic year.
+model ReceiptSequence {
+  tenantId  String
+  yearLabel String
+  last      Int    @default(0)
+
+  @@id([tenantId, yearLabel])
 }
