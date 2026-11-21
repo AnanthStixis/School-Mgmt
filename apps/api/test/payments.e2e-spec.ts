@@ -77,6 +77,9 @@ describe('Online payments and notifications (e2e)', () => {
 
   afterAll(async () => {
     const sids = (await prisma.student.findMany({ where: { name: { startsWith: TAG } }, select: { id: true } })).map((s) => s.id);
+    // The test child sits under a real demo parent: remove its receipt and reminder notices from that parent's feed too.
+    const rids = (await prisma.feeReceipt.findMany({ where: { studentId: { in: sids } }, select: { id: true } })).map((r) => r.id);
+    await prisma.notification.deleteMany({ where: { OR: [...rids.map((id) => ({ dedupeKey: { startsWith: `receipt:${id}:` } })), ...sids.map((id) => ({ dedupeKey: { startsWith: `reminder:${id}:` } }))] } });
     await prisma.paymentAttempt.deleteMany({ where: { studentId: { in: sids } } });
     await prisma.feeReceipt.deleteMany({ where: { studentId: { in: sids } } });
     await prisma.feeAssignment.deleteMany({ where: { studentId: { in: sids } } });

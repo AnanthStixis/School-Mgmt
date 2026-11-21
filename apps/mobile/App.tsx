@@ -8,6 +8,7 @@ import { Fees } from './src/screens/Fees';
 import { Home } from './src/screens/Home';
 import { Login } from './src/screens/Login';
 import { More } from './src/screens/More';
+import { Notices } from './src/screens/Notices';
 import { DevCheckout, PaymentResult } from './src/screens/Payment';
 import { ReceiptDetail, Receipts } from './src/screens/Receipts';
 import { Button, C, ErrorText, Loading, s, useLoad } from './src/ui';
@@ -16,17 +17,17 @@ import { Button, C, ErrorText, Loading, s, useLoad } from './src/ui';
  * BNM School – parent app. Parents sign in with their mobile number and a code, then see each child's
  * fees, pay online, get receipts and follow attendance. Staff and students use the website.
  */
-type Tab = 'home' | 'fees' | 'attendance' | 'receipts' | 'more';
-type Screen = { name: 'checkout'; orderId: string } | { name: 'result'; orderId: string } | { name: 'receipt'; id: string };
+type Tab = 'home' | 'fees' | 'attendance' | 'notices' | 'more';
+type Screen = { name: 'checkout'; orderId: string } | { name: 'result'; orderId: string } | { name: 'receipt'; id: string } | { name: 'receipts' };
 
 const TABS: [Tab, string, string][] = [
   ['home', 'Home', '🏠'],
   ['fees', 'Fees', '₹'],
   ['attendance', 'Attendance', '📅'],
-  ['receipts', 'Receipts', '🧾'],
+  ['notices', 'Notices', '🔔'],
   ['more', 'More', '☰'],
 ];
-const TITLE: Record<Screen['name'], string> = { checkout: 'Online payment', result: 'Online payment', receipt: 'Receipt' };
+const TITLE: Record<Screen['name'], string> = { checkout: 'Online payment', result: 'Online payment', receipt: 'Receipt', receipts: 'Receipts' };
 
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -74,6 +75,13 @@ function ParentApp({ user }: { user: SessionUser }) {
   const push = (sc: Screen) => setStack((st) => [...st, sc]);
   const back = () => setStack((st) => st.slice(0, -1));
   const screen = stack[stack.length - 1];
+  // Notices: checked on open, every minute, and after reading.
+  const feed = useLoad(() => api.notifications(), []);
+  useEffect(() => {
+    const t = setInterval(() => void feed.reload(), 60_000);
+    return () => clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const latest = feed.data?.items.find((n) => n.kind === 'announcement' && !n.read) ?? null;
 
   // Android back button: close the open screen before leaving the app.
   useEffect(() => {
@@ -149,10 +157,23 @@ function ParentApp({ user }: { user: SessionUser }) {
         {screen?.name === 'checkout' && <DevCheckout orderId={screen.orderId} onDone={() => setStack((st) => [...st.slice(0, -1), { name: 'result', orderId: screen.orderId }])} onCancel={back} />}
         {screen?.name === 'result' && <PaymentResult orderId={screen.orderId} onReceipt={(id) => push({ name: 'receipt', id })} onBack={() => (setStack([]), setTab('fees'))} />}
         {screen?.name === 'receipt' && <ReceiptDetail id={screen.id} />}
-        {!screen && tab === 'home' && <Home key={child.id} child={child} onPay={() => setTab('fees')} onAttendance={() => setTab('attendance')} />}
-        {!screen && tab === 'fees' && <Fees key={child.id} child={child} onCheckout={(orderId) => push({ name: 'checkout', orderId })} onResult={(orderId) => push({ name: 'result', orderId })} />}
+        {screen?.name === 'receipts' && <Receipts key={child.id} child={child} onOpen={(id) => push({ name: 'receipt', id })} />}
+        {!screen && tab === 'home' && <Home key={child.id} child={child} notice={latest} onPay={() => setTab('fees')} onAttendance={() => setTab('attendance')} onNotices={() => setTab('notices')} />}
+        {!screen && tab === 'fees' && <Fees key={child.id} child={child} onCheckout={(orderId) => push({ name: 'checkout', orderId })} onResult={(orderId) => push({ name: 'result', orderId })} onReceipts={() => push({ name: 'receipts' })} />}
         {!screen && tab === 'attendance' && <Attendance key={child.id} child={child} />}
-        {!screen && tab === 'receipts' && <Receipts key={child.id} child={child} onOpen={(id) => push({ name: 'receipt', id })} />}
+        {!screen && tab === 'notices' && (
+          <Notices
+            feed={feed.data}
+            loading={feed.loading}
+            error={feed.error}
+            reload={() => void feed.reload()}
+            onOpen={(t) => {
+              if (!t) return;
+              if ('receiptId' in t) push({ name: 'receipt', id: t.receiptId });
+              else setTab(t.tab);
+            }}
+          />
+        )}
         {!screen && tab === 'more' && <More user={user} onSignOut={() => void api.logout()} />}
       </View>
 
@@ -161,8 +182,15 @@ function ParentApp({ user }: { user: SessionUser }) {
           {TABS.map(([t, label, icon]) => {
             const on = t === tab;
             return (
-              <Pressable key={t} accessibilityRole="tab" aria-label={label} aria-selected={on} onPress={() => setTab(t)} style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}>
-                <Text style={{ fontSize: 18, color: on ? C.brand : C.muted }}>{icon}</Text>
+              <Pressable key={t} accessibilityRole="tab" aria-label={t === 'notices' && feed.data?.unread ? `${label}, ${feed.data.unread} unread` : label} aria-selected={on} onPress={() => setTab(t)} style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}>
+                <View>
+                  <Text style={{ fontSize: 18, color: on ? C.brand : C.muted }}>{icon}</Text>
+                  {t === 'notices' && !!feed.data?.unread && (
+                    <View style={{ position: 'absolute', top: -4, right: -12, minWidth: 18, borderRadius: 9, backgroundColor: C.brand, paddingHorizontal: 4 }}>
+                      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800', textAlign: 'center' }}>{feed.data.unread > 99 ? '99+' : feed.data.unread}</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={{ fontSize: 11, fontWeight: on ? '700' : '500', color: on ? C.brand : C.muted }}>{label}</Text>
               </Pressable>
             );

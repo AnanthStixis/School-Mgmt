@@ -20,6 +20,7 @@ import { Attendance } from './pages/Attendance';
 import { Fees } from './pages/Fees';
 import { ReceiptPage } from './pages/Collection';
 import { DevCheckout, PaymentResult } from './pages/Payments';
+import { Communication, Notifications } from './pages/Notifications';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 
@@ -65,6 +66,8 @@ createRoot(document.getElementById('root')!).render(
               <Route path="/pay/dev/:orderId" element={<Guard module="fees"><DevCheckout /></Guard>} />
               <Route path="/pay/result/:orderId" element={<Guard module="fees"><PaymentResult /></Guard>} />
               <Route path="/import/:kind" element={<Guard module="students"><Import /></Guard>} />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/communication" element={<Guard module="communication"><Communication /></Guard>} />
               <Route path="/:module" element={<ModulePlaceholder />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

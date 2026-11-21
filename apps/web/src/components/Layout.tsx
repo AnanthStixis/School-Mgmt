@@ -5,6 +5,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ROLE_LABEL, modulesFor } from '@sms/shared';
 import { useAuth } from '../lib/auth';
 import { BranchSwitcher } from './BranchPicker';
+import { NotificationBell } from '../pages/Notifications';
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -58,6 +59,7 @@ export function Layout() {
           </button>
           <div className="flex-1" />
           <BranchSwitcher />
+          <NotificationBell />
           <div className="hidden text-right leading-tight sm:block">
             <b>{user.name}</b>
             <br />

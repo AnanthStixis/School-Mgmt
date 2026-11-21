@@ -12,7 +12,7 @@ const today = () => new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0
  * Published fees, installment by installment, and "Pay online" for whole installments
  * (balance + today's late fee) of fees the school has switched online payment on for.
  */
-export function Fees({ child, onCheckout, onResult }: { child: Child; onCheckout: (orderId: string) => void; onResult: (orderId: string) => void }) {
+export function Fees({ child, onCheckout, onResult, onReceipts }: { child: Child; onCheckout: (orderId: string) => void; onResult: (orderId: string) => void; onReceipts: () => void }) {
   const q = useLoad(() => api.fees(child.id), [child.id]);
   const payable = useMemo(
     () => (q.data?.assignments ?? []).filter((a) => a.onlineEnabled).flatMap((a) => a.invoices.filter((i) => i.balance > 0).map((i) => ({ ...i, feeTypeName: a.feeTypeName }))),
@@ -59,6 +59,7 @@ export function Fees({ child, onCheckout, onResult }: { child: Child; onCheckout
             <Badge tone={f.totals.balance ? 'amber' : 'green'}>Balance {inr(f.totals.balance)}</Badge>
             {f.totals.overdue > 0 && <Badge tone="red">Overdue {inr(f.totals.overdue)}</Badge>}
           </View>
+          <Button title="🧾  Receipts" variant="secondary" onPress={onReceipts} />
 
           {payable.length > 0 && (
             <Card title="Pay online">

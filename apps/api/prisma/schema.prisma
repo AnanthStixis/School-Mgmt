@@ -377,19 +377,60 @@ model AttendanceRegister {
 
 /// Outgoing messages (SMS now; WhatsApp/app push later). dedupeKey stops repeats,
 /// e.g. one absence alert per guardian per student per day.
+/// One message to one user on one channel: sms, email or inapp (the feed behind the bell / Notices tab).
+/// Recorded before sending under a dedupe key, so nothing is sent twice.
 model Notification {
-  id        String    @id @default(cuid())
-  tenantId  String
-  userId    String
-  channel   String    @default("sms")
-  template  String
-  text      String
-  /// queued, sent, failed
-  status    String    @default("queued")
-  error     String?
-  dedupeKey String    @unique
-  createdAt DateTime  @default(now())
-  sentAt    DateTime?
+  id             String    @id @default(cuid())
+  tenantId       String
+  userId         String
+  /// sms, email, inapp
+  channel        String    @default("sms")
+  /// receipt, absence, fee_reminder, announcement, otp…
+  template       String
+  title          String?
+  text           String
+  /// Where the in-app notice leads, e.g. /receipts/<id>
+  link           String?
+  /// queued, sent, failed (in-app notices are "sent" when created)
+  status         String    @default("queued")
+  error          String?
+  dedupeKey      String    @unique
+  createdAt      DateTime  @default(now())
+  sentAt         DateTime?
+  readAt         DateTime?
+  announcementId String?
+
+  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, channel, createdAt])
+}
+
+/// A circular from the school: in-app for everyone in the audience, optionally by SMS and e-mail too.
+model Announcement {
+  id            String    @id @default(cuid())
+  tenantId      String
+  /// null = every branch of the school
+  branchId      String?
+  title         String
+  body          String
+  /// PARENTS, STAFF, EVERYONE or CLASSES (parents of the listed classes)
+  audience      String
+  classIds      Json?
+  /// Normal, Important, Urgent
+  priority      String    @default("Normal")
+  pinned        Boolean   @default(false)
+  sms           Boolean   @default(false)
+  email         Boolean   @default(false)
+  recipients    Int       @default(0)
+  smsSent       Int       @default(0)
+  emailSent     Int       @default(0)
+  createdById   String
+  createdByName String
+  createdAt     DateTime  @default(now())
+  withdrawnAt   DateTime?
+
+  notifications Notification[]
 
   @@index([tenantId, createdAt])
 }

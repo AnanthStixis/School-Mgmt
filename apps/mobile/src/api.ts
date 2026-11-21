@@ -1,6 +1,7 @@
 import type {
   AuthResponse,
   DevOutcome,
+  NotificationFeedDto,
   PaymentAttemptDto,
   ReceiptDto,
   ReceiptListItem,
@@ -123,6 +124,10 @@ export const api = {
   startPayment: (studentId: string, invoiceIds: string[]) => call<StartPaymentDto>('POST', '/payments/online', { studentId, invoiceIds }),
   payment: (orderId: string) => call<PaymentAttemptDto>('GET', `/payments/online/${encodeURIComponent(orderId)}`),
   devCompletePayment: (orderId: string, outcome: DevOutcome, mode: string) => call<PaymentAttemptDto>('POST', `/payments/dev/${encodeURIComponent(orderId)}/complete`, { outcome, mode }),
+
+  notifications: () => call<NotificationFeedDto>('GET', '/notifications'),
+  markNotificationRead: (id: string) => call<void>('POST', `/notifications/${id}/read`),
+  markAllNotificationsRead: () => call<{ marked: number }>('POST', '/notifications/read-all'),
 
   childLogins: () => call<StudentLoginStatus[]>('GET', '/student-logins/mine'),
   setChildPassword: (studentId: string, password: string) => call<StudentLoginStatus>('PUT', `/student-logins/${studentId}`, { password }),

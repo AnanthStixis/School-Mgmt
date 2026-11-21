@@ -1,9 +1,10 @@
 import { Text, View } from 'react-native';
+import type { NotificationDto } from '@sms/shared';
 import { api, type Child } from '../api';
 import { Badge, Button, C, Card, ErrorText, inr, Loading, Page, s, useLoad } from '../ui';
 
 /** One child at a glance: what's owed, what's overdue, attendance, and the next due date. */
-export function Home({ child, onPay, onAttendance }: { child: Child; onPay: () => void; onAttendance: () => void }) {
+export function Home({ child, notice, onPay, onAttendance, onNotices }: { child: Child; notice: NotificationDto | null; onPay: () => void; onAttendance: () => void; onNotices: () => void }) {
   const q = useLoad(() => Promise.all([api.fees(child.id), api.attendance(child.id)]), [child.id]);
   if (q.loading && !q.data) return <Loading />;
   const [fees, att] = q.data ?? [null, null];
@@ -15,6 +16,12 @@ export function Home({ child, onPay, onAttendance }: { child: Child; onPay: () =
   return (
     <Page onRefresh={q.reload} refreshing={q.loading}>
       <ErrorText error={q.error} />
+      {notice && (
+        <Card title={`${notice.pinned ? '📌 ' : '📢 '}${notice.title}`} style={{ borderColor: '#f6b98d', backgroundColor: '#fff7f0' }}>
+          <Text style={{ color: C.ink, marginBottom: 10 }}>{notice.text.length > 220 ? `${notice.text.slice(0, 220)}…` : notice.text}</Text>
+          <Button title="All notices" variant="secondary" onPress={onNotices} />
+        </Card>
+      )}
       {fees && (
         <Card title="Fees">
           <View style={{ flexDirection: 'row', gap: 16, marginBottom: 10 }}>

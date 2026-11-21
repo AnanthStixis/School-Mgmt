@@ -11,6 +11,9 @@ import { devProvidersAllowed } from './config/runtime';
 import { CorrectionsController } from './fees/corrections.controller';
 import { CorrectionsService } from './fees/corrections.service';
 import { ParallelRunService } from './fees/parallel-run';
+import { AnnouncementsService } from './notifications/announcements.service';
+import { ConsoleEmailSender, EMAIL_SENDER } from './notifications/email';
+import { AnnouncementsController, NotificationsController } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
 import { DevGateway, PAYMENT_GATEWAY } from './payments/gateway';
 import { PaymentsController } from './payments/payments.controller';
@@ -50,12 +53,17 @@ import { StudentLoginsController, StudentLoginsService } from './students/studen
     CollectionController,
     CorrectionsController,
     PaymentsController,
+    NotificationsController,
+    AnnouncementsController,
   ],
   providers: [StaffService, StudentsService, StudentLoginsService, AdmissionsService, AttendanceService, FeesService,
     CollectionService,
     CorrectionsService,
     ParallelRunService,
     NotificationsService,
+    AnnouncementsService,
+    // E-mail: console in development / test systems; off on the live system until a provider is configured.
+    { provide: EMAIL_SENDER, useFactory: () => (devProvidersAllowed() ? new ConsoleEmailSender() : null) },
     PaymentsService,
     {
       provide: PAYMENT_GATEWAY,

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { BranchSettings } from '@sms/shared';
 import {
   type AttendanceOverview,
@@ -13,10 +13,10 @@ import {
 import type { AcademicYear, Branch, SchoolClass } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth-user';
-import { SMS_SENDER, type SmsSender } from '../auth/sms';
 import { requireTenant } from '../common/scope';
 import { ScopeService } from '../common/scope.service';
 import { addDays, dayDate, dayString, todayIST, weekday } from '../common/dates';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Teachers may correct their class's register for this many days back; managers for the whole year. */
@@ -30,13 +30,12 @@ const pct = (p: number, total: number) => (total ? Math.round((p / total) * 1000
 
 @Injectable()
 export class AttendanceService {
-  private readonly log = new Logger(AttendanceService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
-    @Inject(SMS_SENDER) private readonly sms: SmsSender,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Classes the caller can take attendance for: managers all in scope, teachers the classes they teach as class teacher. */
@@ -287,28 +286,16 @@ export class AttendanceService {
   }
 
   /**
-   * One SMS per primary guardian per absent student per day. The dedupe key makes a re-submitted
-   * register (or a correction) never alert the same parent twice.
+   * One SMS (and an in-app notice) per primary guardian per absent student per day. The dedupe key
+   * makes a re-submitted register (or a correction) never alert the same parent twice.
    */
   private async alertAbsences(c: ClassWithBranch, absent: { id: string; name: string }[], date: string): Promise<number> {
     if (!absent.length) return 0;
     const links = await this.prisma.studentGuardian.findMany({ where: { studentId: { in: absent.map((a) => a.id) }, primary: true }, include: { user: true } });
     let sent = 0;
     for (const l of links) {
-      if (!l.user.phone || !l.user.active) continue;
       const student = absent.find((a) => a.id === l.studentId)!;
-      const text = `${student.name} (${c.name}) was marked absent at ${c.branch.name} today, ${date}. If this is unexpected, please contact the school.`;
-      const dedupeKey = `absence:${l.studentId}:${date}:${l.userId}`;
-      const created = await this.prisma.notification.createMany({ data: [{ tenantId: c.branch.tenantId, userId: l.userId, template: 'absence', text, dedupeKey }], skipDuplicates: true });
-      if (!created.count) continue;
-      try {
-        await this.sms.send(l.user.phone, text);
-        await this.prisma.notification.update({ where: { dedupeKey }, data: { status: 'sent', sentAt: new Date() } });
-        sent++;
-      } catch (e) {
-        this.log.warn(`Absence SMS failed for ${l.userId}: ${(e as Error).message}`);
-        await this.prisma.notification.update({ where: { dedupeKey }, data: { status: 'failed', error: (e as Error).message.slice(0, 300) } });
-      }
+      if (await this.notifications.absence(c.branch.tenantId, { id: l.studentId, name: student.name, className: c.name, branchName: c.branch.name }, l.user, date)) sent++;
     }
     return sent;
   }
