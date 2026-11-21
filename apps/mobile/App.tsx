@@ -1,57 +1,174 @@
-import { useState } from 'react';
-import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { BackHandler, Platform, Pressable, SafeAreaView, ScrollView, StatusBar as RNStatusBar, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { ROLE_LABEL, modulesFor, type Role } from '@sms/shared';
+import type { SessionUser } from '@sms/shared';
+import { api, refreshSession, setSessionListener, type Child } from './src/api';
+import { Attendance } from './src/screens/Attendance';
+import { Fees } from './src/screens/Fees';
+import { Home } from './src/screens/Home';
+import { Login } from './src/screens/Login';
+import { More } from './src/screens/More';
+import { DevCheckout, PaymentResult } from './src/screens/Payment';
+import { ReceiptDetail, Receipts } from './src/screens/Receipts';
+import { Button, C, ErrorText, Loading, s, useLoad } from './src/ui';
 
-/** The mobile app serves these three personas (see Poc/mobile.html). */
-const APP_ROLES: Role[] = ['parent', 'student', 'teacher'];
+/**
+ * BNM School – parent app. Parents sign in with their mobile number and a code, then see each child's
+ * fees, pay online, get receipts and follow attendance. Staff and students use the website.
+ */
+type Tab = 'home' | 'fees' | 'attendance' | 'receipts' | 'more';
+type Screen = { name: 'checkout'; orderId: string } | { name: 'result'; orderId: string } | { name: 'receipt'; id: string };
 
-const C = { brand: '#e8650a', bg: '#f3f5fa', ink: '#18223a', muted: '#6a7691', line: '#e4e8f1' };
+const TABS: [Tab, string, string][] = [
+  ['home', 'Home', '🏠'],
+  ['fees', 'Fees', '₹'],
+  ['attendance', 'Attendance', '📅'],
+  ['receipts', 'Receipts', '🧾'],
+  ['more', 'More', '☰'],
+];
+const TITLE: Record<Screen['name'], string> = { checkout: 'Online payment', result: 'Online payment', receipt: 'Receipt' };
 
 export default function App() {
-  const [role, setRole] = useState<Role>('parent');
-  const mods = modulesFor(role).filter((m) => m.key !== 'dashboard');
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [status, setStatus] = useState<'loading' | 'signed-in' | 'signed-out' | 'offline'>('loading');
+
+  useEffect(() => {
+    setSessionListener((u) => {
+      setUser(u);
+      setStatus(u ? 'signed-in' : 'signed-out');
+    });
+    refreshSession().catch(() => setStatus('offline'));
+  }, []);
 
   return (
-    <SafeAreaView style={s.root}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0 }}>
       <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={s.body}>
-        <Image source={require('./assets/bnm-logo.png')} style={s.logo} resizeMode="contain" />
-        <Text style={s.h1}>Development build</Text>
-        <Text style={s.muted}>Pick a persona to preview its menu. Real sign-in comes with the auth module.</Text>
-
-        <View style={s.seg}>
-          {APP_ROLES.map((r) => (
-            <Pressable key={r} onPress={() => setRole(r)} style={[s.segBtn, r === role && s.segOn]}>
-              <Text style={[s.segTxt, r === role && s.segTxtOn]}>{ROLE_LABEL[r]}</Text>
-            </Pressable>
-          ))}
+      {status === 'loading' && <Loading />}
+      {status === 'offline' && (
+        <View style={s.page}>
+          <ErrorText error="Can't reach the school's server. Check your internet connection." />
+          <Button title="Try again" onPress={() => (setStatus('loading'), refreshSession().catch(() => setStatus('offline')))} />
         </View>
-
-        <View style={s.grid}>
-          {mods.map((m) => (
-            <View key={m.key} style={s.tile}>
-              <Text style={s.tileTxt}>{m.label}</Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+      )}
+      {status === 'signed-out' && <Login />}
+      {status === 'signed-in' && user && (user.role === 'parent' ? <ParentApp user={user} /> : <NotForYou user={user} />)}
     </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  body: { padding: 16, paddingTop: 40 },
-  logo: { width: '100%', height: 70, marginBottom: 16 },
-  h1: { fontSize: 20, fontWeight: '700', color: C.ink },
-  muted: { color: C.muted, marginTop: 4, marginBottom: 16 },
-  seg: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: C.line, padding: 3, marginBottom: 16 },
-  segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  segOn: { backgroundColor: C.brand },
-  segTxt: { color: C.ink, fontWeight: '600' },
-  segTxtOn: { color: '#fff' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  tile: { width: '47%', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: C.line, padding: 14 },
-  tileTxt: { color: C.ink, fontWeight: '600' },
-});
+function NotForYou({ user }: { user: SessionUser }) {
+  return (
+    <View style={s.page}>
+      <Text style={s.h1}>Hello, {user.name}</Text>
+      <Text style={s.muted}>This app is for parents. Staff use the school's website.</Text>
+      <Button title="Sign out" variant="secondary" onPress={() => void api.logout()} />
+    </View>
+  );
+}
+
+function ParentApp({ user }: { user: SessionUser }) {
+  const kids = useLoad(() => api.children(), []);
+  const [childId, setChildId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('home');
+  const [stack, setStack] = useState<Screen[]>([]);
+  const push = (sc: Screen) => setStack((st) => [...st, sc]);
+  const back = () => setStack((st) => st.slice(0, -1));
+  const screen = stack[stack.length - 1];
+
+  // Android back button: close the open screen before leaving the app.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (stack.length) {
+        back();
+        return true;
+      }
+      if (tab !== 'home') {
+        setTab('home');
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [stack.length, tab]);
+
+  if (kids.loading && !kids.data) return <Loading />;
+  const children = kids.data ?? [];
+  const child: Child | undefined = children.find((c) => c.id === childId) ?? children[0];
+
+  if (!child) {
+    return (
+      <View style={s.page}>
+        <ErrorText error={kids.error} />
+        <Text style={s.h1}>Hello, {user.name.split(' ')[0]}</Text>
+        <Text style={s.muted}>No student is linked to this mobile number yet. Please contact the school office.</Text>
+        <Button title="Try again" variant="secondary" onPress={kids.reload} />
+        <Button title="Sign out" variant="secondary" onPress={() => void api.logout()} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Header: back button on inner screens; child switcher on the tabs. */}
+      <View style={{ backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.line, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8 }}>
+        {screen ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable accessibilityRole="button" aria-label="Back" onPress={back} hitSlop={12}>
+              <Text style={{ fontSize: 22, color: C.brand }}>‹</Text>
+            </Pressable>
+            <Text style={s.cardTitle}>{TITLE[screen.name]}</Text>
+          </View>
+        ) : (
+          <>
+            <Text style={s.muted}>Hello, {user.name.split(' ')[0]}</Text>
+            {children.length > 1 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 6 }}>
+                {children.map((c) => {
+                  const on = c.id === child.id;
+                  return (
+                    <Pressable key={c.id} accessibilityRole="tab" aria-selected={on} onPress={() => setChildId(c.id)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: on ? C.brand : C.grayBg }}>
+                      <Text style={{ color: on ? '#fff' : C.ink, fontWeight: '700' }}>
+                        {c.name.split(' ')[0]}
+                        {c.className ? ` · ${c.className}` : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <Text style={s.cardTitle}>
+                {child.name}
+                {child.className ? ` · ${child.className}` : ''}
+              </Text>
+            )}
+          </>
+        )}
+      </View>
+
+      <View style={{ flex: 1 }}>
+        {screen?.name === 'checkout' && <DevCheckout orderId={screen.orderId} onDone={() => setStack((st) => [...st.slice(0, -1), { name: 'result', orderId: screen.orderId }])} onCancel={back} />}
+        {screen?.name === 'result' && <PaymentResult orderId={screen.orderId} onReceipt={(id) => push({ name: 'receipt', id })} onBack={() => (setStack([]), setTab('fees'))} />}
+        {screen?.name === 'receipt' && <ReceiptDetail id={screen.id} />}
+        {!screen && tab === 'home' && <Home key={child.id} child={child} onPay={() => setTab('fees')} onAttendance={() => setTab('attendance')} />}
+        {!screen && tab === 'fees' && <Fees key={child.id} child={child} onCheckout={(orderId) => push({ name: 'checkout', orderId })} onResult={(orderId) => push({ name: 'result', orderId })} />}
+        {!screen && tab === 'attendance' && <Attendance key={child.id} child={child} />}
+        {!screen && tab === 'receipts' && <Receipts key={child.id} child={child} onOpen={(id) => push({ name: 'receipt', id })} />}
+        {!screen && tab === 'more' && <More user={user} onSignOut={() => void api.logout()} />}
+      </View>
+
+      {!screen && (
+        <View style={{ flexDirection: 'row', backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.line, paddingBottom: Platform.OS === 'ios' ? 4 : 0 }} accessibilityRole="tablist">
+          {TABS.map(([t, label, icon]) => {
+            const on = t === tab;
+            return (
+              <Pressable key={t} accessibilityRole="tab" aria-label={label} aria-selected={on} onPress={() => setTab(t)} style={{ flex: 1, alignItems: 'center', paddingVertical: 8 }}>
+                <Text style={{ fontSize: 18, color: on ? C.brand : C.muted }}>{icon}</Text>
+                <Text style={{ fontSize: 11, fontWeight: on ? '700' : '500', color: on ? C.brand : C.muted }}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}

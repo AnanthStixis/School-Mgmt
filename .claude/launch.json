@@ -5,6 +5,8 @@
     { "name": "api", "runtimeExecutable": "corepack", "runtimeArgs": ["pnpm", "--filter", "@sms/api", "dev"], "port": 3000 },
     { "name": "web", "runtimeExecutable": "corepack", "runtimeArgs": ["pnpm", "--filter", "@sms/web", "dev"], "port": 5174 },
     { "name": "api-alt", "runtimeExecutable": "cmd", "runtimeArgs": ["/c", "cd apps\\api && set PORT=3001&& node dist/main.js"], "port": 3001 },
+    { "name": "api-mobile", "runtimeExecutable": "cmd", "runtimeArgs": ["/c", "cd apps\\api && set PORT=3001&& set WEB_ORIGIN=http://localhost:5175,http://localhost:8081&& node dist/main.js"], "port": 3001 },
+    { "name": "mobile-web", "runtimeExecutable": "cmd", "runtimeArgs": ["/c", "cd apps\\mobile && set CI=1&& set EXPO_PUBLIC_API_URL=http://localhost:3001&& npx expo start --web --port 8081"], "port": 8081 },
     { "name": "web-alt", "runtimeExecutable": "cmd", "runtimeArgs": ["/c", "set WEB_PORT=5175&& set API_URL=http://localhost:3001&& corepack pnpm --filter @sms/web dev"], "port": 5175 }
   ]
 }

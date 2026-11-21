@@ -6,7 +6,16 @@
     "orientation": "portrait",
     "icon": "./assets/bnm-emblem.png",
     "userInterfaceStyle": "light",
-    "ios": { "bundleIdentifier": "io.stixis.bnmschool", "supportsTablet": true },
-    "android": { "package": "io.stixis.bnmschool" }
+    "ios": {
+      "bundleIdentifier": "io.stixis.bnmschool",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "io.stixis.bnmschool"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-web-browser"
+    ]
   }
 }

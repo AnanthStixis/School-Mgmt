@@ -8,7 +8,7 @@ Production implementation of the approved clickable POC. The POC is the function
 | API | NestJS 11 (TypeScript), Prisma 6, PostgreSQL (local install) |
 | Background jobs | BullMQ + Redis (SLA escalation, reminders, late fees), not wired yet. Redis will run via `corepack pnpm redis:up` (Docker) unless installed locally |
 | Web | React 19 + Vite 6, React Router 7, TanStack Query 5, Tailwind CSS 4 |
-| Mobile | React Native 0.81 + Expo SDK 54 (Parent, Student and Teacher apps) |
+| Mobile | React Native 0.81 + Expo SDK 54 (parent app; student and teacher apps later) |
 | Monorepo | pnpm 9 workspaces + Turborepo |
 | Hosting / payments / SMS / WhatsApp | Not chosen yet; integrations will sit behind adapters |
 
@@ -16,7 +16,7 @@ Production implementation of the approved clickable POC. The POC is the function
 ```
 apps/api        NestJS API  → http://localhost:3000/api
 apps/web        Web portal  → http://localhost:5174 (proxies /api to the API)
-apps/mobile     Expo app
+apps/mobile     Expo parent app
 packages/shared Roles, module permissions (RBAC) and API types shared by all three
 Poc/            Approved clickable POC (local reference only, git-ignored)
 ```
@@ -113,11 +113,16 @@ corepack pnpm --filter @sms/api test:e2e
 ```
 CI (`.github/workflows/ci.yml`) runs all of these against a fresh PostgreSQL on every push and pull request.
 
-### Mobile app (optional)
+### Parent mobile app
+With `corepack pnpm dev` running (the API on port 3000), start the app in a second window:
 ```powershell
 corepack pnpm --filter @sms/mobile dev
 ```
-Scan the QR code with the Expo Go app on your phone. The mobile app doesn't sign in yet; it only previews each role's menu.
+Install **Expo Go** on an Android phone or iPhone on the same Wi-Fi as this computer and scan the QR code. Sign in with the parent's test mobile `98000 00001`; the code appears in the API window as an `[SMS (dev)]` line. The app finds the API on the computer that runs Expo, port 3000 (allow Node.js through the Windows firewall if the phone can't connect). To use another server set `EXPO_PUBLIC_API_URL`, for example `$env:EXPO_PUBLIC_API_URL="https://test.example.in"` before starting.
+
+No phone? `corepack pnpm --filter @sms/mobile web` opens the same app in the browser. Add `http://localhost:8081` to `WEB_ORIGIN` in `apps/api/.env` so the API accepts it.
+
+What the app does: sign in with mobile + code (the session is kept in the phone's secure storage for 30 days); a child switcher; **Home** (what's owed, overdue, late fees, next due date, attendance %); **Fees** (installments and **Pay online**: whole installments with today's late fee, through the development payment page until a real gateway is chosen); **Attendance** (percentage and a month calendar); **Receipts** (every receipt, with details); **More** (set or change each child's own sign-in, sign out). It is for parents only; staff and students use the website.
 
 ### Troubleshooting
 | Problem | Fix |
