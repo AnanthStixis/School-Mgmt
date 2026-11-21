@@ -1,0 +1,24 @@
+{
+  "tenant": {
+    "id": "tenant-bnm",
+    "name": "BNM Public School",
+    "trust": "Bhageerathi Bai Narayan Rao Maanay Educational Institutions",
+    "city": "Bangalore",
+    "receiptPrefix": "BNMPS"
+  },
+  "academicYear": { "label": "2027-28", "startsOn": "2027-04-01", "endsOn": "2028-03-31" },
+  "branches": [
+    {
+      "code": "BNMPS",
+      "name": "BNM Public School",
+      "board": "ICSE / ISC",
+      "color": "#e8650a",
+      "city": "Bangalore",
+      "address": "P.Box No.7087, 12th Main, 27th Cross, Banashankari II Stage, Bangalore - 560070",
+      "lateFeePerDay": 25
+    },
+    { "code": "BNMPRE", "name": "BNM Pre-School", "board": "Pre-primary", "color": "#2e7d32", "city": "Bangalore" },
+    { "code": "BNMPU", "name": "BNM PU College", "board": "Karnataka PU", "color": "#1565c0", "city": "Bangalore" }
+  ],
+  "admins": [{ "name": "Replace With Real Name", "title": "Group Director (Trust)", "email": "director@example.com", "phone": "9000000000" }]
+}

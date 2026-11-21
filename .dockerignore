@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.expo
+**/.env
+**/.env.*
+!**/.env.example
+**/*.tsbuildinfo
+.git
+.github
+.claude
+Poc
+docs

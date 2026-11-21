@@ -6,6 +6,8 @@ export interface HealthResponse {
   version: string;
   db: 'up' | 'down';
   time: string;
+  /** Development or hosted test system: SMS and payments are simulated */
+  testSystem: boolean;
 }
 
 export interface BranchDto {

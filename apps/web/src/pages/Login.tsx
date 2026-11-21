@@ -117,6 +117,9 @@ export function Login() {
             <button disabled={busy} className={primary}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
+            <button type="button" className="w-full text-sm text-brand" onClick={() => switchMode('parent')}>
+              No password? Sign in with a code sent to your mobile
+            </button>
           </form>
         ) : mode === 'student' ? (
           <form onSubmit={submitStudent} className="space-y-4">

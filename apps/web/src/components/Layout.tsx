@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ROLE_LABEL, modulesFor } from '@sms/shared';
 import { useAuth } from '../lib/auth';
@@ -10,6 +12,7 @@ export function Layout() {
   // On small screens the sidebar is a slide-in drawer opened from the menu button.
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => setMenuOpen(false), [location.pathname]);
+  const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: false, staleTime: 300_000 });
   if (!user) return null;
   const mods = modulesFor(user.role);
   let lastGroup = '';
@@ -64,6 +67,11 @@ export function Layout() {
             Sign out
           </button>
         </header>
+        {health.data?.testSystem && (
+          <div className="bg-amber-100 px-4 py-1.5 text-center text-xs font-semibold text-amber-900 print:hidden" role="status">
+            TEST SYSTEM: SMS messages and online payments are simulated. Nothing here is real.
+          </div>
+        )}
         <main className="p-4 md:p-6 print:p-0">
           <Outlet />
         </main>

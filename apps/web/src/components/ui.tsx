@@ -1,4 +1,4 @@
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactElement, type ReactNode, type SelectHTMLAttributes } from 'react';
 
 /** Small set of building blocks styled with the POC's tokens. */
 
@@ -48,13 +48,37 @@ export function Button({ variant = 'default', className = '', ...p }: ButtonHTML
 
 export const inputCls = 'w-full rounded-lg border border-line bg-white px-3 py-2 outline-none focus:border-brand disabled:bg-bg';
 
+/**
+ * A labelled form control. The label and hint are tied to the control by id (for screen readers and
+ * browser autofill), in addition to the label wrapping it.
+ */
 export function Field({ label, hint, children, className = '' }: { label: string; hint?: string; children: ReactNode; className?: string }) {
+  const id = useId();
+  const hintId = hint ? `${id}-hint` : undefined;
+  // Several children (e.g. an input and its suggestions list): the wrapping label still names the input.
+  if (!isValidElement(children) || typeof children.type === 'symbol') {
+    return (
+      <label className={`block ${className}`}>
+        <span className="mb-1 block text-xs font-semibold text-muted">{label}</span>
+        {children}
+        {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
+      </label>
+    );
+  }
+  const controlId = (children.props as { id?: string }).id ?? id;
+  const control = cloneElement(children as ReactElement<{ id?: string; 'aria-describedby'?: string }>, { id: controlId, 'aria-describedby': hintId });
   return (
-    <label className={`block ${className}`}>
-      <span className="mb-1 block text-xs font-semibold text-muted">{label}</span>
-      {children}
-      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
-    </label>
+    <div className={`block ${className}`}>
+      <label htmlFor={controlId} className="mb-1 block text-xs font-semibold text-muted">
+        {label}
+      </label>
+      {control}
+      {hint && (
+        <span id={hintId} className="mt-1 block text-xs text-muted">
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }
 

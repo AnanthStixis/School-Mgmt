@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AccessGuard, JwtAuthGuard } from './guards';
+import { devProvidersAllowed } from '../config/runtime';
 import { ConsoleSmsSender, SMS_SENDER } from './sms';
 
 @Module({
@@ -27,8 +28,8 @@ import { ConsoleSmsSender, SMS_SENDER } from './sms';
     {
       provide: SMS_SENDER,
       useFactory: () => {
-        if (process.env.NODE_ENV === 'production') {
-          throw new Error('No SMS provider configured: the development console sender must not run in production');
+        if (!devProvidersAllowed()) {
+          throw new Error('No SMS provider configured: the development console sender must not run in production (set TEST_SYSTEM=true only on a test system)');
         }
         return new ConsoleSmsSender();
       },

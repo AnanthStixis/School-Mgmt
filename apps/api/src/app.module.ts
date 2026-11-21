@@ -7,6 +7,7 @@ import { AttendanceController } from './attendance/attendance.controller';
 import { AttendanceService } from './attendance/attendance.service';
 import { AuditModule } from './audit/audit.service';
 import { CollectionController } from './fees/collection.controller';
+import { devProvidersAllowed } from './config/runtime';
 import { CorrectionsController } from './fees/corrections.controller';
 import { CorrectionsService } from './fees/corrections.service';
 import { ParallelRunService } from './fees/parallel-run';
@@ -60,7 +61,7 @@ import { StudentLoginsController, StudentLoginsService } from './students/studen
       provide: PAYMENT_GATEWAY,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        if (process.env.NODE_ENV === 'production') throw new Error('No payment gateway configured: the development gateway must not run in production');
+        if (!devProvidersAllowed()) throw new Error('No payment gateway configured: the development gateway must not run in production (set TEST_SYSTEM=true only on a test system)');
         return new DevGateway(config.getOrThrow<string>('JWT_SECRET'), config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5174');
       },
     },
