@@ -18,6 +18,7 @@ import { api } from '../lib/api';
 import { useScope } from '../lib/scope';
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Modal, Select, Table, Tabs } from '../components/ui';
 import { inr } from './Fees';
+import { SendReminders } from './Payments';
 
 const todayISO = () => new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
 
@@ -320,6 +321,7 @@ function DuesReport() {
           <label className="flex items-center gap-1.5 text-sm">
             <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} /> Overdue only
           </label>
+          <SendReminders count={d.rows.filter((r) => r.overdue > 0).length} />
           <Button
             onClick={() =>
               downloadCsv(`dues-${d.asOf}.csv`, [

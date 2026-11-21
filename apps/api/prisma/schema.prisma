@@ -232,6 +232,7 @@ model Student {
   feeReceipts    FeeReceipt[]
   feeCorrections FeeCorrection[]
   feeRefunds     FeeRefund[]
+  payments       PaymentAttempt[]
 
   @@unique([branchId, admissionNo])
 }
@@ -632,4 +633,36 @@ model FeeRefund {
 
   @@index([tenantId, date])
   @@index([receiptId])
+}
+
+/// One online payment attempt. Every attempt is a row first (INITIATED); the gateway's answer decides the rest:
+/// SUCCESS (a receipt is issued), FAILED (declined / failed), PENDING (bank still deciding). Retries are new attempts.
+model PaymentAttempt {
+  id            String    @id @default(cuid())
+  tenantId      String
+  branchId      String
+  studentId     String
+  /// Our order id, sent to the gateway
+  orderId       String    @unique
+  gateway       String
+  amount        Int
+  /// [{ invoiceId, label, fee, fine }] as priced when the parent started paying
+  lines         Json
+  status        String    @default("INITIATED")
+  /// Gateway response code (0 success, 1072 declined, 1000 failed, 1006 waiting in the existing system)
+  code          Int?
+  message       String?
+  mode          String?
+  gatewayTxnId  String?
+  receiptId     String?   @unique
+  /// Paid online but no longer owed (e.g. paid at the counter meanwhile): to be refunded by Accounts
+  excess        Int       @default(0)
+  initiatedById String
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([studentId])
 }

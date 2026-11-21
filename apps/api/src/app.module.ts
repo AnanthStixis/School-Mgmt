@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AcademicYearsController } from './academic-years/academic-years.controller';
 import { AdmissionsController } from './admissions/admissions.controller';
 import { AdmissionsService } from './admissions/admissions.service';
@@ -9,6 +9,10 @@ import { AuditModule } from './audit/audit.service';
 import { CollectionController } from './fees/collection.controller';
 import { CorrectionsController } from './fees/corrections.controller';
 import { CorrectionsService } from './fees/corrections.service';
+import { NotificationsService } from './notifications/notifications.service';
+import { DevGateway, PAYMENT_GATEWAY } from './payments/gateway';
+import { PaymentsController } from './payments/payments.controller';
+import { PaymentsService } from './payments/payments.service';
 import { CollectionService } from './fees/collection.service';
 import { FeesController } from './fees/fees.controller';
 import { FeesService } from './fees/fees.service';
@@ -43,7 +47,21 @@ import { StudentLoginsController, StudentLoginsService } from './students/studen
     FeesController,
     CollectionController,
     CorrectionsController,
+    PaymentsController,
   ],
-  providers: [StaffService, StudentsService, StudentLoginsService, AdmissionsService, AttendanceService, FeesService, CollectionService, CorrectionsService],
+  providers: [StaffService, StudentsService, StudentLoginsService, AdmissionsService, AttendanceService, FeesService,
+    CollectionService,
+    CorrectionsService,
+    NotificationsService,
+    PaymentsService,
+    {
+      provide: PAYMENT_GATEWAY,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        if (process.env.NODE_ENV === 'production') throw new Error('No payment gateway configured: the development gateway must not run in production');
+        return new DevGateway(config.getOrThrow<string>('JWT_SECRET'), config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5174');
+      },
+    },
+  ],
 })
 export class AppModule {}

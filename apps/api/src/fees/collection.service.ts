@@ -22,6 +22,7 @@ import { addDays, dayDate, dayString, todayIST } from '../common/dates';
 import { requireTenant } from '../common/scope';
 import { ScopeService } from '../common/scope.service';
 import { clean } from '../common/validation';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeesService, lateFeePerDay } from './fees.service';
 
@@ -40,8 +41,36 @@ export const receiptInclude = {
 } satisfies Prisma.FeeReceiptInclude;
 export type ReceiptFull = Prisma.FeeReceiptGetPayload<{ include: typeof receiptInclude }>;
 
-const net = (i: { gross: number; concession: number; adjustment: number }) => i.gross - i.concession - i.adjustment;
-const fineFromOf = (i: { fineFrom: Date | null }) => (i.fineFrom ? dayString(i.fineFrom) : null);
+export interface PlannedLine {
+  inv: { id: string; paid: number; finePaid: number; fineWaived: number; fineFrom: Date | null };
+  label: string;
+  fee: number;
+  fine: number;
+  waived: number;
+}
+
+export interface WriteReceipt {
+  tenantId: string;
+  branchId: string;
+  studentId: string;
+  prefix: string;
+  year: { id: string; label: string };
+  today: string;
+  planned: PlannedLine[];
+  mode: string;
+  source: 'Counter' | 'Online';
+  bank?: string | null;
+  instrumentNo?: string | null;
+  instrumentDate?: string | null;
+  reference?: string | null;
+  remarks?: string | null;
+  recon: ReconStatus;
+  createdById: string;
+  createdByName: string;
+}
+
+export const net = (i: { gross: number; concession: number; adjustment: number }) => i.gross - i.concession - i.adjustment;
+export const fineFromOf = (i: { fineFrom: Date | null }) => (i.fineFrom ? dayString(i.fineFrom) : null);
 
 /**
  * Counter fee collection. Each payment produces one receipt with a number from a single school-wide
@@ -55,6 +84,7 @@ export class CollectionService {
     private readonly prisma: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Everything the counter screen needs for one student. */
@@ -157,62 +187,91 @@ export class CollectionService {
     const waivedTotal = planned.reduce((n, p) => n + p.waived, 0);
     const remarks = [clean(input.remarks), waivedTotal ? `Late fee ₹${waivedTotal.toLocaleString('en-IN')} waived: ${waiveReason}` : null].filter(Boolean).join(' · ') || null;
 
-    const receipt = await this.prisma.$transaction(async (tx) => {
-      const seq = await tx.receiptSequence.upsert({
-        where: { tenantId_yearLabel: { tenantId: s.branch.tenantId, yearLabel: year.label } },
-        create: { tenantId: s.branch.tenantId, yearLabel: year.label, last: 1 },
-        update: { last: { increment: 1 } },
-      });
-      for (const p of planned) {
-        if (!p.fee && !p.fine && !p.waived) continue;
-        // Optimistic check: refuse if someone else changed this installment since we read it.
-        const { count } = await tx.feeInvoice.updateMany({
-          where: { id: p.inv.id, paid: p.inv.paid, finePaid: p.inv.finePaid, fineWaived: p.inv.fineWaived },
-          data: {
-            paid: { increment: p.fee },
-            finePaid: { increment: p.fine },
-            fineWaived: { increment: p.waived },
-            ...(p.fine || p.waived ? { fineFrom: dayDate(today) } : {}),
-          },
-        });
-        if (count !== 1) throw new ConflictException(`${p.label} changed while you were collecting. Reload and try again.`);
-      }
-      return tx.feeReceipt.create({
-        data: {
-          tenantId: s.branch.tenantId,
-          branchId: s.branchId,
-          studentId: s.id,
-          academicYearId: year.id,
-          no: `${s.branch.tenant.receiptPrefix}/${year.label}/${String(seq.last).padStart(4, '0')}`,
-          date: dayDate(today),
-          mode,
-          source: 'Counter',
-          feeTotal,
-          fineTotal,
-          total: feeTotal + fineTotal,
-          bank,
-          instrumentNo,
-          instrumentDate: instrumentDate ? dayDate(instrumentDate) : null,
-          reference: clean(input.reference),
-          remarks,
-          recon: RECON_MODES.includes(mode) ? 'PENDING' : 'NA',
-          createdById: user.id,
-          createdByName: actor.name,
-          lines: {
-            create: planned
-              .filter((p) => p.fee || p.fine || p.waived)
-              .map((p) => ({ invoiceId: p.inv.id, label: p.label, fee: p.fee, fine: p.fine, fineWaived: p.waived, prevFineFrom: p.inv.fineFrom })),
-          },
-        },
-        include: receiptInclude,
-      });
-    });
+    const receipt = await this.prisma.$transaction((tx) =>
+      this.writeReceipt(tx, {
+        tenantId: s.branch.tenantId,
+        branchId: s.branchId,
+        studentId: s.id,
+        prefix: s.branch.tenant.receiptPrefix,
+        year,
+        today,
+        planned,
+        mode,
+        source: 'Counter',
+        bank,
+        instrumentNo,
+        instrumentDate,
+        reference: clean(input.reference),
+        remarks,
+        recon: RECON_MODES.includes(mode) ? 'PENDING' : 'NA',
+        createdById: user.id,
+        createdByName: actor.name,
+      }),
+    );
 
     await this.audit.record({ tenantId: receipt.tenantId, actorId: user.id, action: 'fee.collect', entity: 'FeeReceipt', entityId: receipt.id, data: { no: receipt.no, studentId: s.id, mode, fee: feeTotal, fine: fineTotal } });
     if (waivedTotal) {
       await this.audit.record({ tenantId: receipt.tenantId, actorId: user.id, action: 'fee.fine_waive', entity: 'FeeReceipt', entityId: receipt.id, data: { no: receipt.no, studentId: s.id, amount: waivedTotal, reason: waiveReason } });
     }
+    await this.notifications.receiptIssued(receipt.id);
     return receiptDto(receipt);
+  }
+
+  /**
+   * Applies planned payment lines to their installments and writes the receipt with the next number,
+   * inside the caller's transaction. Shared by counter and online payments so both behave the same.
+   */
+  async writeReceipt(tx: Prisma.TransactionClient, p: WriteReceipt): Promise<ReceiptFull> {
+    const seq = await tx.receiptSequence.upsert({
+      where: { tenantId_yearLabel: { tenantId: p.tenantId, yearLabel: p.year.label } },
+      create: { tenantId: p.tenantId, yearLabel: p.year.label, last: 1 },
+      update: { last: { increment: 1 } },
+    });
+    for (const l of p.planned) {
+      if (!l.fee && !l.fine && !l.waived) continue;
+      // Optimistic check: refuse if someone else changed this installment since we read it.
+      const { count } = await tx.feeInvoice.updateMany({
+        where: { id: l.inv.id, paid: l.inv.paid, finePaid: l.inv.finePaid, fineWaived: l.inv.fineWaived },
+        data: {
+          paid: { increment: l.fee },
+          finePaid: { increment: l.fine },
+          fineWaived: { increment: l.waived },
+          ...(l.fine || l.waived ? { fineFrom: dayDate(p.today) } : {}),
+        },
+      });
+      if (count !== 1) throw new ConflictException(`${l.label} changed while you were collecting. Reload and try again.`);
+    }
+    const feeTotal = p.planned.reduce((n, l) => n + l.fee, 0);
+    const fineTotal = p.planned.reduce((n, l) => n + l.fine, 0);
+    return tx.feeReceipt.create({
+      data: {
+        tenantId: p.tenantId,
+        branchId: p.branchId,
+        studentId: p.studentId,
+        academicYearId: p.year.id,
+        no: `${p.prefix}/${p.year.label}/${String(seq.last).padStart(4, '0')}`,
+        date: dayDate(p.today),
+        mode: p.mode,
+        source: p.source,
+        feeTotal,
+        fineTotal,
+        total: feeTotal + fineTotal,
+        bank: p.bank ?? null,
+        instrumentNo: p.instrumentNo ?? null,
+        instrumentDate: p.instrumentDate ? dayDate(p.instrumentDate) : null,
+        reference: p.reference ?? null,
+        remarks: p.remarks ?? null,
+        recon: p.recon,
+        createdById: p.createdById,
+        createdByName: p.createdByName,
+        lines: {
+          create: p.planned
+            .filter((l) => l.fee || l.fine || l.waived)
+            .map((l) => ({ invoiceId: l.inv.id, label: l.label, fee: l.fee, fine: l.fine, fineWaived: l.waived, prevFineFrom: l.inv.fineFrom })),
+        },
+      },
+      include: receiptInclude,
+    });
   }
 
   /** Reverses a receipt. Only the newest receipt on an installment can be cancelled, so the reversal is exact. */

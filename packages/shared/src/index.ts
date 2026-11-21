@@ -7,3 +7,4 @@ export * from './attendance';
 export * from './fees';
 export * from './collection';
 export * from './corrections';
+export * from './payments';

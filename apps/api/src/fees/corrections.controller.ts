@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import {
   CONCESSION_METHODS,
   PAYMENT_MODES,
@@ -13,6 +13,8 @@ import {
   type PaymentMode,
   type ReceiptDto,
   type RefundInput,
+  type ReminderInput,
+  type ReminderResult,
 } from '@sms/shared';
 import { IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import type { AuthUser } from '../auth/auth-user';
@@ -39,6 +41,11 @@ class AdjustmentDto implements AdjustmentInput {
 class FineWaiverDto implements FineWaiverInput {
   @IsString() invoiceId!: string;
   @IsString() @Length(3, 200, REASON) remarks!: string;
+}
+
+class ReminderDto implements ReminderInput {
+  @IsOptional() @IsString() branchId?: string;
+  @IsOptional() @IsString() classId?: string;
 }
 
 class RefundDtoIn implements RefundInput {
@@ -75,6 +82,12 @@ export class CorrectionsController {
   @Post('refunds')
   refund(@CurrentUser() user: AuthUser, @Body() dto: RefundDtoIn): Promise<ReceiptDto> {
     return this.corrections.refund(user, dto);
+  }
+
+  @Post('reminders')
+  @HttpCode(200)
+  reminders(@CurrentUser() user: AuthUser, @Body() dto: ReminderDto): Promise<ReminderResult> {
+    return this.corrections.sendReminders(user, dto);
   }
 
   @Get('students/:id/corrections')

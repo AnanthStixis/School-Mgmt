@@ -1,4 +1,9 @@
 import type {
+  DevOutcome,
+  OnlinePaymentsReportDto,
+  PaymentAttemptDto,
+  ReminderResult,
+  StartPaymentDto,
   AdjustmentInput,
   ClassSummaryDto,
   ConcessionInput,
@@ -217,6 +222,11 @@ export const api = {
   duesReport: (p: { branchId?: string; classId?: string; overdueOnly?: string }) => call<DuesReportDto>('GET', `/fees/reports/dues${qs(p)}`),
   classSummary: (p: { branchId?: string }) => call<ClassSummaryDto>('GET', `/fees/reports/classes${qs(p)}`),
   correctionsReport: (p: { branchId?: string; from?: string; to?: string; kind?: string }) => call<CorrectionsReportDto>('GET', `/fees/reports/corrections${qs(p)}`),
+  startPayment: (studentId: string, invoiceIds: string[]) => call<StartPaymentDto>('POST', '/payments/online', { studentId, invoiceIds }),
+  payment: (orderId: string) => call<PaymentAttemptDto>('GET', `/payments/online/${encodeURIComponent(orderId)}`),
+  devCompletePayment: (orderId: string, outcome: DevOutcome, mode: string) => call<PaymentAttemptDto>('POST', `/payments/dev/${encodeURIComponent(orderId)}/complete`, { outcome, mode }),
+  onlinePayments: (p: { branchId?: string; from?: string; to?: string; status?: string }) => call<OnlinePaymentsReportDto>('GET', `/payments/online${qs(p)}`),
+  sendReminders: (p: { branchId?: string; classId?: string }) => call<ReminderResult>('POST', '/fees/reminders', p),
   studentReceipts: (studentId: string) => call<ReceiptListItem[]>('GET', `/fees/students/${studentId}/receipts`),
   updateFeeProfile: (id: string, b: Partial<FeeProfile>) => call<FeeProfile>('PATCH', `/fees/students/${id}/profile`, b),
 

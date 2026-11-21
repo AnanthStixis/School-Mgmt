@@ -20,6 +20,7 @@ import {
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { CollectPanel, ReceiptRegister, StudentReceipts } from './Collection';
+import { OnlinePaymentsReport, PayOnline } from './Payments';
 import { ConcessionModal, CorrectionsHistory, FeeReports, WaiveFineModal, WriteOffModal } from './Corrections';
 import { useAuth } from '../lib/auth';
 import { useScope } from '../lib/scope';
@@ -36,7 +37,7 @@ export function Fees() {
   return <StaffFees />;
 }
 
-type Tab = 'collect' | 'receipts' | 'reports' | 'overview' | 'assign' | 'setup';
+type Tab = 'collect' | 'receipts' | 'online' | 'reports' | 'overview' | 'assign' | 'setup';
 function StaffFees() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'collect');
@@ -47,6 +48,7 @@ function StaffFees() {
         items={[
           ['collect', 'Collect'],
           ['receipts', 'Receipts'],
+          ['online', 'Online payments'],
           ['reports', 'Reports'],
           ['overview', 'Overview'],
           ['assign', 'Assign & publish'],
@@ -57,6 +59,7 @@ function StaffFees() {
       />
       {tab === 'collect' && <CollectPanel initialStudentId={params.get('student') ?? undefined} />}
       {tab === 'receipts' && <ReceiptRegister />}
+      {tab === 'online' && <OnlinePaymentsReport />}
       {tab === 'reports' && <FeeReports />}
       {tab === 'overview' && <Overview onSetup={() => setTab('setup')} />}
       {tab === 'assign' && <NeedsBranch>{(b) => <AssignPublish key={b} branchId={b} />}</NeedsBranch>}
@@ -602,6 +605,7 @@ export function StudentFees({ studentId, staff }: { studentId: string; staff?: b
         )}
       </div>
       {!f.assignments.length && <p className="text-sm text-muted">{staff ? 'No fees assigned yet.' : 'No fees have been published yet.'}</p>}
+      {!staff && <PayOnline key={f.studentId + f.totals.balance} f={f} />}
       {f.assignments.map((a) => (
         <AssignmentTable key={a.id} a={a} staff={staff} studentId={f.studentId} />
       ))}
@@ -723,7 +727,7 @@ function FamilyFees() {
   const kid = useMemo(() => kids.data?.[idx], [kids.data, idx]);
   return (
     <div>
-      <PageHeader title="Fees" sub="Published fees, installments and receipts. Pay at the school office; online payment is coming soon." />
+      <PageHeader title="Fees" sub="Published fees, installments and receipts. Pay online or at the school office." />
       {kids.data && kids.data.length > 1 && (
         <div className="mb-4 inline-flex overflow-hidden rounded-lg border border-line">
           {kids.data.map((k, i) => (

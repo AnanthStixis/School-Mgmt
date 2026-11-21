@@ -16,6 +16,8 @@ import {
   type FineWaiverInput,
   type ReceiptDto,
   type RefundInput,
+  type ReminderInput,
+  type ReminderResult,
 } from '@sms/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth-user';
@@ -23,6 +25,7 @@ import { addDays, dayDate, dayString, todayIST } from '../common/dates';
 import { requireTenant } from '../common/scope';
 import { ScopeService } from '../common/scope.service';
 import { clean } from '../common/validation';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CollectionService, receiptDto, receiptInclude, refundableOf, refundDto } from './collection.service';
 import { FeesService, lateFeePerDay } from './fees.service';
@@ -57,6 +60,7 @@ export class CorrectionsService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly collection: CollectionService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ================= concession =================
@@ -221,6 +225,22 @@ export class CorrectionsService {
     const s = await this.collection.findStudent(user, studentId);
     const rows = await this.prisma.feeCorrection.findMany({ where: { studentId: s.id }, include: correctionInclude, orderBy: { createdAt: 'desc' } });
     return rows.map(toDto);
+  }
+
+  // ================= reminders =================
+
+  /** SMS the primary guardian of every student with an overdue balance (once per student per day). */
+  async sendReminders(user: AuthUser, input: ReminderInput): Promise<ReminderResult> {
+    const report = await this.dues(user, { branchId: input.branchId, classId: input.classId, overdueOnly: true });
+    const guardians = await this.prisma.studentGuardian.findMany({ where: { studentId: { in: report.rows.map((r) => r.studentId) }, primary: true }, include: { user: true } });
+    const tenantId = requireTenant(user);
+    let sent = 0;
+    for (const r of report.rows) {
+      const g = guardians.find((x) => x.studentId === r.studentId)?.user ?? null;
+      if (await this.notifications.feeReminder(tenantId, r, g, report.asOf)) sent++;
+    }
+    await this.audit.record({ tenantId, actorId: user.id, action: 'fee.reminders', entity: 'Notification', data: { sent, students: report.rows.length, branchId: input.branchId ?? null, classId: input.classId ?? null } });
+    return { sent, skipped: report.rows.length - sent };
   }
 
   // ================= reports =================
